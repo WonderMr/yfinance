@@ -130,13 +130,15 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
         tickers, (list, set, tuple)) else tickers.replace(',', ' ').split()
 
     # accept isin as ticker
-    shared._ISINS = {}
+    with shared._ISINS_LOCK:
+        shared._ISINS = {}
     _tickers_ = []
     for ticker in tickers:
         if utils.is_isin(ticker):
             isin = ticker
             ticker = utils.get_ticker_by_isin(ticker)
-            shared._ISINS[ticker] = isin
+            with shared._ISINS_LOCK:
+                shared._ISINS[ticker] = isin
         _tickers_.append(ticker)
 
     tickers = _tickers_
@@ -144,12 +146,16 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
     tickers = list(set([ticker.upper() for ticker in tickers]))
 
     if progress:
-        shared._PROGRESS_BAR = utils.ProgressBar(len(tickers), 'completed')
+        with shared._PROGRESS_BAR_LOCK:
+            shared._PROGRESS_BAR = utils.ProgressBar(len(tickers), 'completed')
 
-    # reset shared._DFS
-    shared._DFS = {}
-    shared._ERRORS = {}
-    shared._TRACEBACKS = {}
+    # reset shared structures
+    with shared._DFS_LOCK:
+        shared._DFS = {}
+    with shared._ERRORS_LOCK:
+        shared._ERRORS = {}
+    with shared._TRACEBACKS_LOCK:
+        shared._TRACEBACKS = {}
 
     # download using threads
     if threads:
@@ -159,7 +165,7 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
         with ThreadPoolExecutor(max_workers=threads) as executor:
             for ticker in tickers:
                 futures[executor.submit(
-                    _download_one,
+                    _download_one_threaded,
                     ticker,
                     start=start,
                     end=end,
@@ -178,13 +184,15 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
                 ticker = futures[future]
                 try:
                     data = future.result()
-                    shared._DFS[ticker.upper()] = data
+                    with shared._DFS_LOCK:
+                        shared._DFS[ticker.upper()] = data
                 except Exception as e:
-                    shared._DFS[ticker.upper()] = utils.empty_df()
-                    shared._ERRORS[ticker.upper()] = repr(e)
-                    shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
-                if progress:
-                    shared._PROGRESS_BAR.animate()
+                    with shared._DFS_LOCK:
+                        shared._DFS[ticker.upper()] = utils.empty_df()
+                    with shared._ERRORS_LOCK:
+                        shared._ERRORS[ticker.upper()] = repr(e)
+                    with shared._TRACEBACKS_LOCK:
+                        shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
     # download synchronously
     else:
         for ticker in tickers:
@@ -194,27 +202,35 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
                                      actions=actions, auto_adjust=auto_adjust,
                                      back_adjust=back_adjust, repair=repair, keepna=keepna,
                                      rounding=rounding, timeout=timeout)
-                shared._DFS[ticker.upper()] = data
+                with shared._DFS_LOCK:
+                    shared._DFS[ticker.upper()] = data
             except Exception as e:
-                shared._DFS[ticker.upper()] = utils.empty_df()
-                shared._ERRORS[ticker.upper()] = repr(e)
-                shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
+                with shared._DFS_LOCK:
+                    shared._DFS[ticker.upper()] = utils.empty_df()
+                with shared._ERRORS_LOCK:
+                    shared._ERRORS[ticker.upper()] = repr(e)
+                with shared._TRACEBACKS_LOCK:
+                    shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
             if progress:
-                shared._PROGRESS_BAR.animate()
+                with shared._PROGRESS_BAR_LOCK:
+                    shared._PROGRESS_BAR.animate()
 
     if progress:
-        shared._PROGRESS_BAR.completed()
+        with shared._PROGRESS_BAR_LOCK:
+            shared._PROGRESS_BAR.completed()
 
-    if shared._ERRORS:
+    with shared._ERRORS_LOCK:
+        errors_copy = shared._ERRORS.copy()
+    if errors_copy:
         # Send errors to logging module
         logger = utils.get_yf_logger()
         logger.error('\n%.f Failed download%s:' % (
-            len(shared._ERRORS), 's' if len(shared._ERRORS) > 1 else ''))
+            len(errors_copy), 's' if len(errors_copy) > 1 else ''))
 
         # Log each distinct error once, with list of symbols affected
         errors = {}
-        for ticker in shared._ERRORS:
-            err = shared._ERRORS[ticker]
+        for ticker in errors_copy:
+            err = errors_copy[ticker]
             err = err.replace(f'${ticker}: ', '')
             if err not in errors:
                 errors[err] = [ticker]
@@ -224,9 +240,11 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
             logger.error(f'{errors[err]}: ' + err)
 
         # Log each distinct traceback once, with list of symbols affected
+        with shared._TRACEBACKS_LOCK:
+            tbs_copy = shared._TRACEBACKS.copy()
         tbs = {}
-        for ticker in shared._TRACEBACKS:
-            tb = shared._TRACEBACKS[ticker]
+        for ticker in tbs_copy:
+            tb = tbs_copy[ticker]
             tb = tb.replace(f'${ticker}: ', '')
             if tb not in tbs:
                 tbs[tb] = [ticker]
@@ -236,20 +254,24 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
             logger.debug(f'{tbs[tb]}: ' + tb)
 
     if ignore_tz:
-        for tkr in shared._DFS.keys():
-            if (shared._DFS[tkr] is not None) and (shared._DFS[tkr].shape[0] > 0):
-                shared._DFS[tkr].index = shared._DFS[tkr].index.tz_localize(None)
+        with shared._DFS_LOCK:
+            for tkr in shared._DFS.keys():
+                if (shared._DFS[tkr] is not None) and (shared._DFS[tkr].shape[0] > 0):
+                    shared._DFS[tkr].index = shared._DFS[tkr].index.tz_localize(None)
 
     try:
-        data = _pd.concat(shared._DFS.values(), axis=1, sort=True,
-                          keys=shared._DFS.keys(), names=['Ticker', 'Price'])
+        with shared._DFS_LOCK:
+            data = _pd.concat(shared._DFS.values(), axis=1, sort=True,
+                              keys=shared._DFS.keys(), names=['Ticker', 'Price'])
     except Exception:
         _realign_dfs()
-        data = _pd.concat(shared._DFS.values(), axis=1, sort=True,
-                          keys=shared._DFS.keys(), names=['Ticker', 'Price'])
+        with shared._DFS_LOCK:
+            data = _pd.concat(shared._DFS.values(), axis=1, sort=True,
+                              keys=shared._DFS.keys(), names=['Ticker', 'Price'])
     data.index = _pd.to_datetime(data.index, utc=not ignore_tz)
     # switch names back to isins if applicable
-    data.rename(columns=shared._ISINS, inplace=True)
+    with shared._ISINS_LOCK:
+        data.rename(columns=shared._ISINS, inplace=True)
 
     if group_by == 'column':
         data.columns = data.columns.swaplevel(0, 1)
@@ -265,23 +287,24 @@ def _realign_dfs():
     idx_len = 0
     idx = None
 
-    for df in shared._DFS.values():
-        if len(df) > idx_len:
-            idx_len = len(df)
-            idx = df.index
+    with shared._DFS_LOCK:
+        for df in shared._DFS.values():
+            if len(df) > idx_len:
+                idx_len = len(df)
+                idx = df.index
 
-    for key in shared._DFS.keys():
-        try:
-            shared._DFS[key] = _pd.DataFrame(
-                index=idx, data=shared._DFS[key]).drop_duplicates()
-        except Exception:
-            shared._DFS[key] = _pd.concat([
-                utils.empty_df(idx), shared._DFS[key].dropna()
-            ], axis=0, sort=True)
+        for key in shared._DFS.keys():
+            try:
+                shared._DFS[key] = _pd.DataFrame(
+                    index=idx, data=shared._DFS[key]).drop_duplicates()
+            except Exception:
+                shared._DFS[key] = _pd.concat([
+                    utils.empty_df(idx), shared._DFS[key].dropna()
+                ], axis=0, sort=True)
 
-        # remove duplicate index
-        shared._DFS[key] = shared._DFS[key].loc[
-            ~shared._DFS[key].index.duplicated(keep='last')]
+            # remove duplicate index
+            shared._DFS[key] = shared._DFS[key].loc[
+                ~shared._DFS[key].index.duplicated(keep='last')]
 
 
 def _download_one(ticker, start=None, end=None,
@@ -299,3 +322,20 @@ def _download_one(ticker, start=None, end=None,
     )
 
     return data
+
+
+def _download_one_threaded(ticker, start=None, end=None,
+                           auto_adjust=False, back_adjust=False, repair=False,
+                           actions=False, period="max", interval="1d",
+                           prepost=False, rounding=False,
+                           keepna=False, timeout=10):
+    try:
+        return _download_one(ticker, start=start, end=end,
+                              auto_adjust=auto_adjust, back_adjust=back_adjust,
+                              repair=repair, actions=actions, period=period,
+                              interval=interval, prepost=prepost,
+                              rounding=rounding, keepna=keepna, timeout=timeout)
+    finally:
+        if shared._PROGRESS_BAR is not None:
+            with shared._PROGRESS_BAR_LOCK:
+                shared._PROGRESS_BAR.animate()
