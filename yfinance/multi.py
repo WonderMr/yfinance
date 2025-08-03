@@ -143,7 +143,7 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
 
     tickers = _tickers_
 
-    tickers = list(set([ticker.upper() for ticker in tickers]))
+    tickers = list(dict.fromkeys([ticker.upper() for ticker in tickers]))
 
     if progress:
         with shared._PROGRESS_BAR_LOCK:
