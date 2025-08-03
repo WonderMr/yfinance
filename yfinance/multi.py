@@ -22,12 +22,12 @@
 from __future__ import print_function
 
 import logging
-import time as _time
 import traceback
 from typing import Union
 import warnings
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import multitasking as _multitasking
 import pandas as _pd
 from curl_cffi import requests
 
@@ -154,25 +154,51 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
     # download using threads
     if threads:
         if threads is True:
-            threads = min([len(tickers), _multitasking.cpu_count() * 2])
-        _multitasking.set_max_threads(threads)
-        for i, ticker in enumerate(tickers):
-            _download_one_threaded(ticker, period=period, interval=interval,
-                                   start=start, end=end, prepost=prepost,
-                                   actions=actions, auto_adjust=auto_adjust,
-                                   back_adjust=back_adjust, repair=repair, keepna=keepna,
-                                   progress=(progress and i > 0),
-                                   rounding=rounding, timeout=timeout)
-        while len(shared._DFS) < len(tickers):
-            _time.sleep(0.01)
+            threads = min([len(tickers), (os.cpu_count() or 1) * 2])
+        futures = {}
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            for ticker in tickers:
+                futures[executor.submit(
+                    _download_one,
+                    ticker,
+                    start=start,
+                    end=end,
+                    auto_adjust=auto_adjust,
+                    back_adjust=back_adjust,
+                    repair=repair,
+                    actions=actions,
+                    period=period,
+                    interval=interval,
+                    prepost=prepost,
+                    rounding=rounding,
+                    keepna=keepna,
+                    timeout=timeout,
+                )] = ticker
+            for future in as_completed(futures):
+                ticker = futures[future]
+                try:
+                    data = future.result()
+                    shared._DFS[ticker.upper()] = data
+                except Exception as e:
+                    shared._DFS[ticker.upper()] = utils.empty_df()
+                    shared._ERRORS[ticker.upper()] = repr(e)
+                    shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
+                if progress:
+                    shared._PROGRESS_BAR.animate()
     # download synchronously
     else:
-        for i, ticker in enumerate(tickers):
-            data = _download_one(ticker, period=period, interval=interval,
-                                 start=start, end=end, prepost=prepost,
-                                 actions=actions, auto_adjust=auto_adjust,
-                                 back_adjust=back_adjust, repair=repair, keepna=keepna,
-                                 rounding=rounding, timeout=timeout)
+        for ticker in tickers:
+            try:
+                data = _download_one(ticker, period=period, interval=interval,
+                                     start=start, end=end, prepost=prepost,
+                                     actions=actions, auto_adjust=auto_adjust,
+                                     back_adjust=back_adjust, repair=repair, keepna=keepna,
+                                     rounding=rounding, timeout=timeout)
+                shared._DFS[ticker.upper()] = data
+            except Exception as e:
+                shared._DFS[ticker.upper()] = utils.empty_df()
+                shared._ERRORS[ticker.upper()] = repr(e)
+                shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
             if progress:
                 shared._PROGRESS_BAR.animate()
 
@@ -258,40 +284,18 @@ def _realign_dfs():
             ~shared._DFS[key].index.duplicated(keep='last')]
 
 
-@_multitasking.task
-def _download_one_threaded(ticker, start=None, end=None,
-                           auto_adjust=False, back_adjust=False, repair=False,
-                           actions=False, progress=True, period="max",
-                           interval="1d", prepost=False,
-                           keepna=False, rounding=False, timeout=10):
-    _download_one(ticker, start, end, auto_adjust, back_adjust, repair,
-                         actions, period, interval, prepost, rounding,
-                         keepna, timeout)
-    if progress:
-        shared._PROGRESS_BAR.animate()
-
-
 def _download_one(ticker, start=None, end=None,
                   auto_adjust=False, back_adjust=False, repair=False,
                   actions=False, period="max", interval="1d",
                   prepost=False, rounding=False,
                   keepna=False, timeout=10):
-    data = None
-    try:
-        data = Ticker(ticker).history(
-                period=period, interval=interval,
-                start=start, end=end, prepost=prepost,
-                actions=actions, auto_adjust=auto_adjust,
-                back_adjust=back_adjust, repair=repair,
-                rounding=rounding, keepna=keepna, timeout=timeout,
-                raise_errors=True
-        )
-    except Exception as e:
-        # glob try/except needed as current thead implementation breaks if exception is raised.
-        shared._DFS[ticker.upper()] = utils.empty_df()
-        shared._ERRORS[ticker.upper()] = repr(e)
-        shared._TRACEBACKS[ticker.upper()] = traceback.format_exc()
-    else:
-        shared._DFS[ticker.upper()] = data
+    data = Ticker(ticker).history(
+            period=period, interval=interval,
+            start=start, end=end, prepost=prepost,
+            actions=actions, auto_adjust=auto_adjust,
+            back_adjust=back_adjust, repair=repair,
+            rounding=rounding, keepna=keepna, timeout=timeout,
+            raise_errors=True
+    )
 
     return data
