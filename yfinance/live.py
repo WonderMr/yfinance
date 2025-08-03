@@ -72,12 +72,14 @@ class AsyncWebSocket(BaseWebSocket):
             try:
                 await asyncio.sleep(self._subscription_interval)
 
-                if self._subscriptions:
-                    message = {"subscribe": list(self._subscriptions)}
-                    await self._ws.send(json.dumps(message))
+                if not self._subscriptions:
+                    continue
 
-                    if self.verbose:
-                        print(f"Heartbeat subscription sent for symbols: {self._subscriptions}")
+                message = {"subscribe": list(self._subscriptions)}
+                await self._ws.send(json.dumps(message))
+
+                if self.verbose:
+                    print(f"Heartbeat subscription sent for symbols: {self._subscriptions}")
             except Exception as e:
                 self.logger.error("Error in heartbeat subscription: %s", e, exc_info=True)
                 if self.verbose:
