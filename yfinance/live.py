@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import binascii
 import json
 from typing import List, Optional, Callable, Union
 
@@ -9,6 +10,7 @@ from websockets.asyncio.client import connect as async_connect
 from yfinance import utils
 from yfinance.pricing_pb2 import PricingData
 from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import DecodeError
 
 
 class BaseWebSocket:
@@ -26,14 +28,27 @@ class BaseWebSocket:
             pricing_data = PricingData()
             pricing_data.ParseFromString(decoded_bytes)
             return MessageToDict(pricing_data, preserving_proto_field_name=True)
-        except Exception as e:
-            self.logger.error("Failed to decode message: %s", e, exc_info=True)
+        except binascii.Error as e:
+            self.logger.error("Failed to base64 decode message: %s", e, exc_info=True)
             if self.verbose:
-                print("Failed to decode message: %s", e)
+                print("Failed to base64 decode message:", e)
             return {
                 'error': str(e),
                 'raw_base64': base64_message
             }
+        except DecodeError as e:
+            self.logger.error("Failed to decode protobuf message: %s", e, exc_info=True)
+            if self.verbose:
+                print("Failed to decode protobuf message:", e)
+            return {
+                'error': str(e),
+                'raw_base64': base64_message
+            }
+        except Exception as e:
+            self.logger.error("Failed to decode message: %s", e, exc_info=True)
+            if self.verbose:
+                print("Failed to decode message:", e)
+            raise
 
 
 class AsyncWebSocket(BaseWebSocket):
