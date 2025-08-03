@@ -23,6 +23,7 @@ from __future__ import print_function
 
 import json as _json
 import warnings
+import threading
 from typing import Optional, Union
 from urllib.parse import quote as urlencode
 
@@ -43,9 +44,6 @@ from .scrapers.history import PriceHistory
 from .scrapers.funds import FundsData
 
 from .const import _BASE_URL_, _ROOT_URL_, _QUERY1_URL_, _SENTINEL_
-
-
-_tz_info_fetch_ctr = 0
 
 class TickerBase:
     def __init__(self, ticker, session=None, proxy=_SENTINEL_):
@@ -96,6 +94,9 @@ class TickerBase:
         self._message_handler = None
         self.ws = None
 
+        self._tz_info_fetch_ctr = 0
+        self._tz_info_fetch_lock = threading.Lock()
+
     @utils.log_indent_decorator
     def history(self, *args, **kwargs) -> pd.DataFrame:
         return self._lazy_load_price_history().history(*args, **kwargs)
@@ -123,15 +124,15 @@ class TickerBase:
             if tz is None:
                 # _fetch_ticker_tz works in 99.999% of cases.
                 # For rare fail get from info.
-                global _tz_info_fetch_ctr
-                if _tz_info_fetch_ctr < 2:
-                    # ... but limit. If _fetch_ticker_tz() always
-                    # failing then bigger problem.
-                    _tz_info_fetch_ctr += 1
-                    for k in ['exchangeTimezoneName', 'timeZoneFullName']:
-                        if k in self.info:
-                            tz = self.info[k]
-                            break
+                with self._tz_info_fetch_lock:
+                    if self._tz_info_fetch_ctr < 2:
+                        # ... but limit. If _fetch_ticker_tz() always
+                        # failing then bigger problem.
+                        self._tz_info_fetch_ctr += 1
+                        for k in ['exchangeTimezoneName', 'timeZoneFullName']:
+                            if k in self.info:
+                                tz = self.info[k]
+                                break
             if utils.is_valid_timezone(tz):
                 c.store(self.ticker, tz)
             else:
