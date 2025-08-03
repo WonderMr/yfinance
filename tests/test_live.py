@@ -1,3 +1,4 @@
+import base64
 import unittest
 from unittest.mock import Mock
 
@@ -24,6 +25,15 @@ class TestWebSocket(unittest.TestCase):
     def test_decode_message_invalid(self):
         websocket = BaseWebSocket(Mock())
         base64_message = "invalid_base64_string"
+        decoded = websocket._decode_message(base64_message)
+        assert "error" in decoded
+        assert "raw_base64" in decoded
+        self.assertEqual(base64_message, decoded["raw_base64"])
+
+    def test_decode_message_invalid_proto(self):
+        websocket = BaseWebSocket(Mock())
+        raw = b"not a valid proto"
+        base64_message = base64.b64encode(raw).decode()
         decoded = websocket._decode_message(base64_message)
         assert "error" in decoded
         assert "raw_base64" in decoded
