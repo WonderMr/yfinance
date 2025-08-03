@@ -19,8 +19,15 @@
 # limitations under the License.
 #
 
+import threading
+
 _DFS = {}
+_DFS_LOCK = threading.Lock()
 _PROGRESS_BAR = None
+_PROGRESS_BAR_LOCK = threading.Lock()
 _ERRORS = {}
+_ERRORS_LOCK = threading.Lock()
 _TRACEBACKS = {}
+_TRACEBACKS_LOCK = threading.Lock()
 _ISINS = {}
+_ISINS_LOCK = threading.Lock()
