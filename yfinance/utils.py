@@ -23,7 +23,6 @@ from __future__ import print_function
 
 import datetime as _datetime
 import logging
-import re
 import re as _re
 import sys as _sys
 import threading
@@ -438,7 +437,7 @@ def is_valid_period_format(period):
 
     # Regex pattern to match valid period formats like '1d', '2wk', '3mo', '1y'
     valid_pattern = r"^[1-9]\d*(d|wk|mo|y)$"
-    return bool(re.match(valid_pattern, period))
+    return bool(_re.match(valid_pattern, period))
 
 
 def auto_adjust(data):
