@@ -29,7 +29,6 @@ import sys as _sys
 import threading
 from functools import wraps
 from inspect import getmembers
-from types import FunctionType
 from typing import List, Optional
 
 import numpy as _np
@@ -43,11 +42,17 @@ from yfinance import const
 # From https://stackoverflow.com/a/59128615
 def attributes(obj):
     disallowed_names = {
-        name for name, value in getmembers(type(obj))
-        if isinstance(value, FunctionType)}
+        name for name, _ in getmembers(
+            type(obj), lambda v: callable(v) or isinstance(v, property)
+        )
+    }
     return {
-        name: getattr(obj, name) for name in dir(obj)
-        if name[0] != '_' and name not in disallowed_names and hasattr(obj, name)}
+        name: getattr(obj, name)
+        for name in dir(obj)
+        if not name.startswith("_")
+        and name not in disallowed_names
+        and hasattr(obj, name)
+    }
 
 
 # Logging
