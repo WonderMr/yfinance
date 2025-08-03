@@ -185,21 +185,17 @@ class _TzCache:
         db = self.get_db()
         if db is None:
             return
-        try:
+
+        with db.atomic():
             if value is None:
-                q = _TZ_KV.delete().where(_TZ_KV.key == key)
-                q.execute()
+                _TZ_KV.delete().where(_TZ_KV.key == key).execute()
                 return
-            with db.atomic():
-                _TZ_KV.insert(key=key, value=value).execute()
-        except _peewee.IntegrityError:
-            # Integrity error means the key already exists. Try updating the key.
+
             old_value = self.lookup(key)
             if old_value != value:
                 get_yf_logger().debug(f"Value for key {key} changed from {old_value} to {value}.")
-                with db.atomic():
-                    q = _TZ_KV.update(value=value).where(_TZ_KV.key == key)
-                    q.execute()
+
+            _TZ_KV.insert(key=key, value=value).on_conflict_replace().execute()
 
 
 def get_tz_cache():
