@@ -33,10 +33,11 @@ from .scrapers.funds import FundsData
 
 class Ticker(TickerBase):
     def __init__(self, ticker, session=None, proxy=_SENTINEL_):
+        super(Ticker, self).__init__(ticker, session=session)
         if proxy is not _SENTINEL_:
             warnings.warn("Set proxy via new config function: yf.set_config(proxy=proxy)", DeprecationWarning, stacklevel=2)
-            self._data._set_proxy(proxy)
-        super(Ticker, self).__init__(ticker, session=session)
+            if hasattr(self, "_data"):
+                self._data._set_proxy(proxy)
         self._expirations = {}
         self._underlying  = {}
 
