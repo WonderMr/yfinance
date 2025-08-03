@@ -156,9 +156,12 @@ class TickerBase:
         except YFRateLimitError:
             # Must propagate this
             raise
-        except Exception as e:
+        except (requests.exceptions.RequestException, ValueError) as e:
             logger.error(f"Failed to get ticker '{self.ticker}' reason: {e}")
             return None
+        except Exception:
+            logger.exception(f"Failed to get ticker '{self.ticker}'")
+            raise
         else:
             error = data.get('chart', {}).get('error', None)
             if error:
@@ -167,12 +170,15 @@ class TickerBase:
             else:
                 try:
                     return data["chart"]["result"][0]["meta"]["exchangeTimezoneName"]
-                except Exception as err:
+                except (KeyError, IndexError, TypeError, ValueError) as err:
                     logger.error(f"Could not get exchangeTimezoneName for ticker '{self.ticker}' reason: {err}")
                     logger.debug("Got response: ")
                     logger.debug("-------------")
                     logger.debug(f" {data}")
                     logger.debug("-------------")
+                except Exception:
+                    logger.exception(f"Unexpected error extracting timezone for ticker '{self.ticker}'")
+                    raise
         return None
 
     def get_recommendations(self, proxy=_SENTINEL_, as_dict=False):
