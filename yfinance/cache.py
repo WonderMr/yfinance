@@ -1,5 +1,5 @@
 import peewee as _peewee
-from threading import Lock
+from threading import Lock, Thread
 import os as _os
 import platformdirs as _ad
 import atexit as _atexit
@@ -9,6 +9,7 @@ import pickle as _pkl
 from .utils import get_yf_logger
 
 _cache_init_lock = Lock()
+_MAX_AGE = _dt.timedelta(days=30)
 
 
 
@@ -110,6 +111,7 @@ tz_db_proxy = _peewee.Proxy()
 class _TZ_KV(_peewee.Model):
     key = _peewee.CharField(primary_key=True)
     value = _peewee.CharField(null=True)
+    updated_at = _peewee.DateTimeField()
     
     class Meta:
         database = tz_db_proxy
@@ -121,6 +123,7 @@ class _TzCache:
         self.initialised = -1
         self.db = None
         self.dummy = False
+        self._cleanup_started = False
 
     def get_db(self):
         if self.db is not None:
@@ -156,6 +159,7 @@ class _TzCache:
             else:
                 raise
         self.initialised = 1  # success
+        self._start_cleanup()
 
     def lookup(self, key):
         if self.dummy:
@@ -168,9 +172,14 @@ class _TzCache:
             return None
 
         try:
-            return _TZ_KV.get(_TZ_KV.key == key).value
+            row = _TZ_KV.get(_TZ_KV.key == key)
         except _TZ_KV.DoesNotExist:
             return None
+
+        if _dt.datetime.now() - row.updated_at > _MAX_AGE:
+            return None
+
+        return row.value
 
     def store(self, key, value):
         if self.dummy:
@@ -195,7 +204,25 @@ class _TzCache:
             if old_value != value:
                 get_yf_logger().debug(f"Value for key {key} changed from {old_value} to {value}.")
 
-            _TZ_KV.insert(key=key, value=value).on_conflict_replace().execute()
+            _TZ_KV.insert(
+                key=key,
+                value=value,
+                updated_at=_dt.datetime.now(),
+            ).on_conflict_replace().execute()
+
+    def _start_cleanup(self):
+        if self._cleanup_started:
+            return
+        self._cleanup_started = True
+        Thread(target=self._cleanup_expired, daemon=True).start()
+
+    def _cleanup_expired(self):
+        db = self.get_db()
+        if db is None:
+            return
+        cutoff = _dt.datetime.now() - _MAX_AGE
+        with db.atomic():
+            _TZ_KV.delete().where(_TZ_KV.updated_at < cutoff).execute()
 
 
 def get_tz_cache():
