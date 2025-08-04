@@ -51,3 +51,37 @@ class YFInvalidPeriodError(YFException):
 class YFRateLimitError(YFException):
     def __init__(self):
         super().__init__("Too Many Requests. Rate limited. Try after a while.")
+
+
+class YFRequestError(YFException):
+    def __init__(self, url, message="", original_exception=None):
+        self.url = url
+        self.message = message
+        self.original_exception = original_exception
+        detail = message if message else "Request error"
+        detail += f" for url {url}"
+        if original_exception is not None:
+            detail += f" ({original_exception})"
+        super().__init__(detail)
+
+
+class YFHTTPError(YFRequestError):
+    def __init__(self, url, status_code, response_text=""):
+        msg = f"HTTP {status_code}"
+        if response_text:
+            msg += f": {response_text}"
+        super().__init__(url, msg)
+        self.status_code = status_code
+        self.response_text = response_text
+
+
+class YFConnectionError(YFRequestError):
+    def __init__(self, url, original_exception=None):
+        super().__init__(url, "Connection error", original_exception)
+
+
+class YFTimeoutError(YFRequestError):
+    def __init__(self, url, timeout, original_exception=None):
+        message = f"Request timed out after {timeout} seconds"
+        super().__init__(url, message, original_exception)
+        self.timeout = timeout

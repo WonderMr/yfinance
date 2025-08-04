@@ -580,11 +580,18 @@ class Quote:
 
     def _fetch(self, modules: list):
         if not isinstance(modules, list):
-            raise YFException("Should provide a list of modules, see available modules using `valid_modules`")
+            raise YFException(
+                "Should provide a list of modules, see available modules using `valid_modules`. "
+                f"Received {modules!r} of type {type(modules).__name__}"
+            )
 
+        original_modules = modules
         modules = ','.join([m for m in modules if m in quote_summary_valid_modules])
         if len(modules) == 0:
-            raise YFException("No valid modules provided, see available modules using `valid_modules`")
+            raise YFException(
+                "No valid modules provided, see available modules using `valid_modules`. "
+                f"Requested modules: {original_modules}"
+            )
         params_dict = {"modules": modules, "corsDomain": "finance.yahoo.com", "formatted": "false", "symbol": self._symbol}
         try:
             result = self._data.get_raw_json(_QUOTE_SUMMARY_URL_ + f"/{self._symbol}", params=params_dict)

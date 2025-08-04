@@ -193,7 +193,7 @@ class FundsData:
             self._parse_top_holdings(data["topHoldings"])
             self._parse_fund_profile(data["fundProfile"])
         except KeyError:
-            raise YFDataException("No Fund data found.")
+            raise YFDataException(f"No Fund data found for '{self._symbol}'.")
         except Exception as e:
             logger = utils.get_yf_logger()
             logger.error(f"Failed to get fund data for '{self._symbol}' reason: {e}")
