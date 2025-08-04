@@ -91,8 +91,11 @@ class Lookup:
             data = {}
 
         # Error returned
-        if data.get("finance", {}).get("error", {}):
-            raise YFException(data.get("finance", {}).get("error", {}))
+        error = data.get("finance", {}).get("error", {})
+        if error:
+            desc = error.get("description", error)
+            code = error.get("code", "unknown")
+            raise YFException(f"{desc} (code: {code}). Full error: {error}")
 
         self._cache[cache_key] = data
         return data

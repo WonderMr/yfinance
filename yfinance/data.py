@@ -10,7 +10,14 @@ from frozendict import frozendict
 from . import utils, cache
 import threading
 
-from .exceptions import YFRateLimitError, YFDataException
+from .exceptions import (
+    YFRateLimitError,
+    YFDataException,
+    YFHTTPError,
+    YFTimeoutError,
+    YFConnectionError,
+    YFRequestError,
+)
 
 cache_maxsize = 64
 
@@ -403,7 +410,19 @@ class YfData(metaclass=SingletonMeta):
         if body:
             request_args['json'] = body
 
-        response = request_method(**request_args)
+        try:
+            response = request_method(**request_args)
+        except requests.exceptions.Timeout as e:
+            raise YFTimeoutError(url, timeout, e) from e
+        except requests.exceptions.ConnectionError as e:
+            raise YFConnectionError(url, e) from e
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response else "unknown"
+            text = e.response.text if e.response else ""
+            raise YFHTTPError(url, status_code, text) from e
+        except requests.exceptions.RequestException as e:
+            raise YFRequestError(url, "Unexpected request exception", e) from e
+
         utils.get_yf_logger().debug(f'response code={response.status_code}')
         if response.status_code >= 400:
             # Retry with other cookie strategy
@@ -419,6 +438,8 @@ class YfData(metaclass=SingletonMeta):
             # Raise exception if rate limited
             if response.status_code == 429:
                 raise YFRateLimitError()
+            elif response.status_code >= 400:
+                raise YFHTTPError(url, response.status_code, response.text)
 
         return response
 
@@ -430,5 +451,11 @@ class YfData(metaclass=SingletonMeta):
     def get_raw_json(self, url, params=None, timeout=30):
         utils.get_yf_logger().debug(f'get_raw_json(): {url}')
         response = self.get(url, params=params, timeout=timeout)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            raise YFHTTPError(response.url, response.status_code, response.text) from e
+        try:
+            return response.json()
+        except ValueError as e:
+            raise YFDataException(f"Failed to parse json response from Yahoo Finance: {response.text}") from e

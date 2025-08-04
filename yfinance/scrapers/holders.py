@@ -98,7 +98,7 @@ class Holders:
             self._parse_insider_holders(data.get("insiderHolders", {}))
             self._parse_net_share_purchase_activity(data.get("netSharePurchaseActivity", {}))
         except (KeyError, IndexError):
-            raise YFDataException("Failed to parse holders json data.")
+            raise YFDataException(f"Failed to parse holders json data for '{self._symbol}'.")
 
     @staticmethod
     def _parse_raw_values(data):
