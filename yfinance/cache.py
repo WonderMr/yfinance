@@ -158,6 +158,15 @@ class _TzCache:
                 db.create_tables([_TZ_KV])
             else:
                 raise
+        # Ensure cache table has ``updated_at`` column. Older cache versions
+        # lacked this column which results in "no such column" errors when
+        # the table is queried. If it's missing, add the column and
+        # backfill existing rows with the current timestamp.
+        cols = [c.name for c in db.get_columns('_tz_kv')]
+        if 'updated_at' not in cols:
+            db.execute_sql('ALTER TABLE "_tz_kv" ADD COLUMN "updated_at" DATETIME')
+            db.execute_sql('UPDATE "_tz_kv" SET "updated_at" = ?', (_dt.datetime.now(),))
+
         self.initialised = 1  # success
         self._start_cleanup()
 
