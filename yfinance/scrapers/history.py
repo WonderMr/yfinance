@@ -89,24 +89,21 @@ class PriceHistory:
             # Yahoo's way of adjusting mutiday intervals is fundamentally broken.
             # Have to fetch 1d, adjust, then resample.
             if interval == '5d':
-                raise Exception("Yahoo's interval '5d' is nonsense, not supported with repair")
+                raise ValueError("Yahoo's interval '5d' is nonsense, not supported with repair")
             if start is None and end is None and period is not None:
                 tz = self.tz
-                if tz is None:
-                    # Every valid ticker has a timezone. A missing timezone is a problem.
-                    _exception = YFTzMissingError(self.ticker)
-                    err_msg = str(_exception)
-                    shared._DFS[self.ticker] = utils.empty_df()
-                    shared._ERRORS[self.ticker] = err_msg.split(': ', 1)[1]
-                    if raise_errors:
-                        raise _exception
-                    else:
-                        logger.error(err_msg)
-                    return utils.empty_df()
+                if not tz:
+                    tz = utils.fetch_timezone(self.ticker)
+                    if not tz:
+                        logger.warning("Could not determine timezone for %s. Falling back to UTC.", self.ticker)
+                        tz = "UTC"
+                    self.tz = tz
                 if period == 'ytd':
-                    start = _datetime.date(pd.Timestamp.utcnow().tz_convert(tz).year, 1, 1)
+                    now = pd.Timestamp.now(tz=tz)
+                    start = _datetime.date(now.year, 1, 1)
                 else:
-                    start = pd.Timestamp.utcnow().tz_convert(tz).date()
+                    now = pd.Timestamp.now(tz=tz)
+                    start = now.date()
                     start -= utils._interval_to_timedelta(period)
                     start -= _datetime.timedelta(days=4)
                 period_user = period
@@ -118,17 +115,12 @@ class PriceHistory:
         if start or end or (period and period.lower() == "max"):
             # Check can get TZ. Fail => probably delisted
             tz = self.tz
-            if tz is None:
-                # Every valid ticker has a timezone. A missing timezone is a problem.
-                _exception = YFTzMissingError(self.ticker)
-                err_msg = str(_exception)
-                shared._DFS[self.ticker] = utils.empty_df()
-                shared._ERRORS[self.ticker] = err_msg.split(': ', 1)[1]
-                if raise_errors:
-                    raise _exception
-                else:
-                    logger.error(err_msg)
-                return utils.empty_df()
+            if not tz:
+                tz = utils.fetch_timezone(self.ticker)
+                if not tz:
+                    logger.warning("Could not determine timezone for %s. Falling back to UTC.", self.ticker)
+                    tz = "UTC"
+                self.tz = tz
 
         if start:
             start_dt = utils._parse_user_dt(start, tz)
@@ -144,7 +136,7 @@ class PriceHistory:
                 start_dt = end_dt - utils._interval_to_timedelta('1mo')
                 start = int(start_dt.timestamp())
             elif not end:
-                end_dt = pd.Timestamp.utcnow().tz_convert(tz)
+                end_dt = pd.Timestamp.now(tz=tz)
                 end = int(end_dt.timestamp())
         else:
             if period.lower() == "max":
