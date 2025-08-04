@@ -30,6 +30,7 @@ from functools import wraps
 from inspect import getmembers
 from typing import List, Optional
 
+from curl_cffi import requests
 import numpy as _np
 import pandas as _pd
 import pytz as _tz
@@ -826,6 +827,21 @@ def safe_merge_dfs(df_main, df_sub, interval):
         raise Exception('Data was lost in merge, investigate')
 
     return df
+
+
+def fetch_timezone(ticker: str, timeout: int = 10) -> Optional[str]:
+    """Fetch timezone for *ticker* from Yahoo Finance."""
+    url = f"{const._BASE_URL_}/v8/finance/chart/{ticker}"
+    params = {"range": "1d", "interval": "1d"}
+    try:
+        session = requests.Session(impersonate="chrome")
+        resp = session.get(url, params=params, timeout=timeout)
+        data = resp.json()
+        return data["chart"]["result"][0]["meta"]["exchangeTimezoneName"]
+    except Exception:
+        logger = get_yf_logger()
+        logger.debug(f"Failed to fetch timezone for ticker '{ticker}'", exc_info=True)
+        return None
 
 
 def fix_Yahoo_dst_issue(df, interval):

@@ -582,7 +582,7 @@ class TickerBase:
 
         # Process dates
         tz = self._get_ticker_tz(timeout=10)
-        dt_now = pd.Timestamp.utcnow().tz_convert(tz)
+        dt_now = pd.Timestamp.now(tz=tz)
         if start is not None:
             start = utils._parse_user_dt(start, tz)
         if end is not None:

@@ -146,7 +146,7 @@ class FastInfo:
         if self._prices_1y.empty:
             return self._prices_1y
 
-        dnow = pd.Timestamp.utcnow().tz_convert(self.timezone).date()
+        dnow = pd.Timestamp.now(tz=self.timezone).date()
         d1 = dnow
         d0 = (d1 + datetime.timedelta(days=1)) - utils._interval_to_timedelta("1y")
         if fullDaysOnly and self._exchange_open_now():
