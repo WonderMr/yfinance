@@ -28,6 +28,7 @@ requirements:
     - html5lib >=1.1
     - curl_cffi >=0.7
     - peewee >=3.16.2
+    - pydantic >=2
     - pip
     - python
 
@@ -44,6 +45,7 @@ requirements:
     - html5lib >=1.1
     - curl_cffi >=0.7
     - peewee >=3.16.2
+    - pydantic >=2
     - python
 
 test:

@@ -12,4 +12,5 @@ requests_ratelimiter>=0.3.1
 scipy>=1.6.3
 curl_cffi>=0.7
 protobuf>=3.19.0
+pydantic>=2
 websockets>=13.0
