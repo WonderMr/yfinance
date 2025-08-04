@@ -30,9 +30,11 @@ from urllib.parse import quote as urlencode
 import numpy as np
 import pandas as pd
 from curl_cffi import requests
+from pydantic import ValidationError
 
 
 from . import utils, cache
+from .chart import ChartResponse
 from .data import YfData
 from .exceptions import YFEarningsDateMissing, YFRateLimitError
 from .live import WebSocket
@@ -152,11 +154,21 @@ class TickerBase:
         url = f"{_BASE_URL_}/v8/finance/chart/{self.ticker}"
 
         try:
-            data = self._data.cache_get(url=url, params=params, timeout=timeout)
-            data = data.json()
+            response = self._data.cache_get(url=url, params=params, timeout=timeout)
+            data = response.json()
+            chart = ChartResponse.model_validate(data)
         except YFRateLimitError:
             # Must propagate this
             raise
+        except ValidationError as err:
+            logger.error(
+                f"Could not validate chart response for ticker '{self.ticker}' reason: {err}"
+            )
+            logger.debug("Got response: ")
+            logger.debug("-------------")
+            logger.debug(f" {data}")
+            logger.debug("-------------")
+            return None
         except (requests.exceptions.RequestException, ValueError) as e:
             logger.error(f"Failed to get ticker '{self.ticker}' reason: {e}")
             return None
@@ -164,21 +176,27 @@ class TickerBase:
             logger.exception(f"Failed to get ticker '{self.ticker}'")
             raise
         else:
-            error = data.get('chart', {}).get('error', None)
+            error = chart.chart.error
             if error:
                 # explicit error from yahoo API
-                logger.debug(f"Got error from yahoo api for ticker {self.ticker}, Error: {error}")
+                logger.debug(
+                    f"Got error from yahoo api for ticker {self.ticker}, Error: {error}"
+                )
             else:
                 try:
-                    return data["chart"]["result"][0]["meta"]["exchangeTimezoneName"]
-                except (KeyError, IndexError, TypeError, ValueError) as err:
-                    logger.error(f"Could not get exchangeTimezoneName for ticker '{self.ticker}' reason: {err}")
+                    return chart.chart.result[0].meta.exchangeTimezoneName
+                except (IndexError, AttributeError) as err:
+                    logger.error(
+                        f"Could not get exchangeTimezoneName for ticker '{self.ticker}' reason: {err}"
+                    )
                     logger.debug("Got response: ")
                     logger.debug("-------------")
                     logger.debug(f" {data}")
                     logger.debug("-------------")
                 except Exception:
-                    logger.exception(f"Unexpected error extracting timezone for ticker '{self.ticker}'")
+                    logger.exception(
+                        f"Unexpected error extracting timezone for ticker '{self.ticker}'"
+                    )
                     raise
         return None
 
