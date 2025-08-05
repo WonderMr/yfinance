@@ -529,83 +529,38 @@ class PriceHistory:
         # Retry fetching rows that are entirely empty
         if _retry and mask_nan_or_zero.any():
             interval_td = utils._interval_to_timedelta(interval_user)
-            idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
+            for attempt in range(max_retries):
+                mask_nan_or_zero = (
+                    df[data_colnames].isna() | (df[data_colnames] == 0)
+                ).all(axis=1)
+                if not mask_nan_or_zero.any():
+                    break
+                idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
 
-            # Detect long sequences of missing rows and refetch in yearly blocks
-            blocks = []
-            if len(idx_bad) > 0:
+                blocks = []
                 current = [idx_bad[0]]
                 for dt in idx_bad[1:]:
                     if dt - current[-1] == interval_td:
                         current.append(dt)
                     else:
-                        if len(current) >= 5:
-                            blocks.append(current)
+                        blocks.append((current[0], current[-1]))
                         current = [dt]
-                if len(current) >= 5:
-                    blocks.append(current)
-            for block in blocks:
-                start_block = block[0]
-                end_block = block[-1]
-                for year in range(start_block.year, end_block.year + 1):
-                    block_year = [dt for dt in block if dt.year == year]
-                    fetch_start = pd.Timestamp(year, 1, 1, tz=start_block.tz)
-                    fetch_end = pd.Timestamp(year + 1, 1, 1, tz=start_block.tz)
-                    for attempt in range(max_retries):
-                        logger.debug(
-                            "%s: block refetch %s -> %s (%d rows) attempt %d/%d",
-                            self.ticker,
-                            fetch_start,
-                            fetch_end,
-                            len(block_year),
-                            attempt + 1,
-                            max_retries,
-                        )
-                        df_block = self.history(
-                            start=fetch_start,
-                            end=fetch_end,
-                            interval=interval_user,
-                            prepost=prepost,
-                            actions=actions,
-                            auto_adjust=auto_adjust,
-                            back_adjust=back_adjust,
-                            repair=repair,
-                            keepna=True,
-                            rounding=rounding,
-                            timeout=timeout,
-                            raise_errors=raise_errors,
-                            _no_cache=True,
-                            _retry=False,
-                        )
-                        if df_block.empty:
-                            continue
-                        df = df.combine_first(df_block)
-                        block_idx = pd.Index(block_year)
-                        mask_remaining = (
-                            df.loc[block_idx, data_colnames].isna()
-                            | (df.loc[block_idx, data_colnames] == 0)
-                        ).all(axis=1)
-                        if mask_remaining.any():
-                            continue
-                        break
-                    else:
-                        logger.debug(
-                            "%s: exceeded max_retries=%d for block %s -> %s",
-                            self.ticker,
-                            max_retries,
-                            fetch_start,
-                            fetch_end,
-                        )
+                blocks.append((current[0], current[-1]))
 
-            mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
-            idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
-            for dt in idx_bad:
-                start_dt = dt - interval_td
-                end_dt = dt + interval_td
-                for _ in range(max_retries):
-                    df_retry = self.history(
-                        start=start_dt,
-                        end=end_dt,
+                for start_block, end_block in blocks:
+                    fetch_start = start_block - interval_td
+                    fetch_end = end_block + interval_td
+                    logger.debug(
+                        "%s: block refetch %s -> %s attempt %d/%d",
+                        self.ticker,
+                        fetch_start,
+                        fetch_end,
+                        attempt + 1,
+                        max_retries,
+                    )
+                    df_block = self.history(
+                        start=fetch_start,
+                        end=fetch_end,
                         interval=interval_user,
                         prepost=prepost,
                         actions=actions,
@@ -619,22 +574,9 @@ class PriceHistory:
                         _no_cache=True,
                         _retry=False,
                     )
-                    if df_retry.empty or dt not in df_retry.index:
-                        continue
-                    row = df_retry.loc[[dt]]
-                    if (row[data_colnames].isna() | (row[data_colnames] == 0)).all(axis=1).iloc[0]:
-                        continue
-                    for col in row.columns:
-                        if col in df.columns:
-                            df.at[dt, col] = row[col].iloc[0]
-                    break
-                else:
-                    logger.debug(
-                        "%s: exceeded max_retries=%d for %s",
-                        self.ticker,
-                        max_retries,
-                        dt,
-                    )
+                    if not df_block.empty:
+                        df = df.combine_first(df_block)
+
             mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
         if keepna:
             if mask_nan_or_zero.any():
