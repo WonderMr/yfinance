@@ -78,7 +78,8 @@ class PriceHistory:
                 If True, then raise errors as Exceptions instead of logging.
             max_retries : int
                 Maximum attempts to refill empty rows when Yahoo returns
-                completely missing price data.
+                completely missing price data and when refetching yearly
+                blocks of data.
                 Default: 5
         """
         logger = utils.get_yf_logger()
@@ -546,33 +547,55 @@ class PriceHistory:
             for block in blocks:
                 start_block = block[0]
                 end_block = block[-1]
-                fetch_start = pd.Timestamp(start_block.year, 1, 1, tz=start_block.tz)
-                fetch_end = pd.Timestamp(end_block.year + 1, 1, 1, tz=end_block.tz)
-                logger.debug(
-                    "%s: block refetch %s -> %s (%d rows)",
-                    self.ticker,
-                    fetch_start,
-                    fetch_end,
-                    len(block),
-                )
-                df_block = self.history(
-                    start=fetch_start,
-                    end=fetch_end,
-                    interval=interval_user,
-                    prepost=prepost,
-                    actions=actions,
-                    auto_adjust=auto_adjust,
-                    back_adjust=back_adjust,
-                    repair=repair,
-                    keepna=True,
-                    rounding=rounding,
-                    timeout=timeout,
-                    raise_errors=raise_errors,
-                    _no_cache=True,
-                    _retry=False,
-                )
-                if not df_block.empty:
-                    df = df.combine_first(df_block)
+                for year in range(start_block.year, end_block.year + 1):
+                    block_year = [dt for dt in block if dt.year == year]
+                    fetch_start = pd.Timestamp(year, 1, 1, tz=start_block.tz)
+                    fetch_end = pd.Timestamp(year + 1, 1, 1, tz=start_block.tz)
+                    for attempt in range(max_retries):
+                        logger.debug(
+                            "%s: block refetch %s -> %s (%d rows) attempt %d/%d",
+                            self.ticker,
+                            fetch_start,
+                            fetch_end,
+                            len(block_year),
+                            attempt + 1,
+                            max_retries,
+                        )
+                        df_block = self.history(
+                            start=fetch_start,
+                            end=fetch_end,
+                            interval=interval_user,
+                            prepost=prepost,
+                            actions=actions,
+                            auto_adjust=auto_adjust,
+                            back_adjust=back_adjust,
+                            repair=repair,
+                            keepna=True,
+                            rounding=rounding,
+                            timeout=timeout,
+                            raise_errors=raise_errors,
+                            _no_cache=True,
+                            _retry=False,
+                        )
+                        if df_block.empty:
+                            continue
+                        df = df.combine_first(df_block)
+                        block_idx = pd.Index(block_year)
+                        mask_remaining = (
+                            df.loc[block_idx, data_colnames].isna()
+                            | (df.loc[block_idx, data_colnames] == 0)
+                        ).all(axis=1)
+                        if mask_remaining.any():
+                            continue
+                        break
+                    else:
+                        logger.debug(
+                            "%s: exceeded max_retries=%d for block %s -> %s",
+                            self.ticker,
+                            max_retries,
+                            fetch_start,
+                            fetch_end,
+                        )
 
             mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
             idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
