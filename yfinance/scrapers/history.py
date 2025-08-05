@@ -491,10 +491,17 @@ class PriceHistory:
         # missing rows cleanup
         if not actions:
             df = df.drop(columns=["Dividends", "Stock Splits", "Capital Gains"], errors='ignore')
-        if not keepna:
-            data_colnames = _PRICE_COLNAMES_ + ['Volume'] + ['Dividends', 'Stock Splits', 'Capital Gains']
-            data_colnames = [c for c in data_colnames if c in df.columns]
-            mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
+        data_colnames = _PRICE_COLNAMES_ + ['Volume'] + ['Dividends', 'Stock Splits', 'Capital Gains']
+        data_colnames = [c for c in data_colnames if c in df.columns]
+        mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
+        if keepna:
+            if mask_nan_or_zero.any():
+                logger.warning(
+                    "%s: %d empty rows found, consider repair=True or keepna=False",
+                    self.ticker,
+                    mask_nan_or_zero.sum(),
+                )
+        else:
             df = df.drop(mask_nan_or_zero.index[mask_nan_or_zero])
 
         if interval != interval_user:
