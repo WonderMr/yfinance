@@ -529,6 +529,53 @@ class PriceHistory:
         if _retry and mask_nan_or_zero.any():
             interval_td = utils._interval_to_timedelta(interval_user)
             idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
+
+            # Detect long sequences of missing rows and refetch in yearly blocks
+            blocks = []
+            if len(idx_bad) > 0:
+                current = [idx_bad[0]]
+                for dt in idx_bad[1:]:
+                    if dt - current[-1] == interval_td:
+                        current.append(dt)
+                    else:
+                        if len(current) >= 5:
+                            blocks.append(current)
+                        current = [dt]
+                if len(current) >= 5:
+                    blocks.append(current)
+            for block in blocks:
+                start_block = block[0]
+                end_block = block[-1]
+                fetch_start = pd.Timestamp(start_block.year, 1, 1, tz=start_block.tz)
+                fetch_end = pd.Timestamp(end_block.year + 1, 1, 1, tz=end_block.tz)
+                logger.debug(
+                    "%s: block refetch %s -> %s (%d rows)",
+                    self.ticker,
+                    fetch_start,
+                    fetch_end,
+                    len(block),
+                )
+                df_block = self.history(
+                    start=fetch_start,
+                    end=fetch_end,
+                    interval=interval_user,
+                    prepost=prepost,
+                    actions=actions,
+                    auto_adjust=auto_adjust,
+                    back_adjust=back_adjust,
+                    repair=repair,
+                    keepna=True,
+                    rounding=rounding,
+                    timeout=timeout,
+                    raise_errors=raise_errors,
+                    _no_cache=True,
+                    _retry=False,
+                )
+                if not df_block.empty:
+                    df = df.combine_first(df_block)
+
+            mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
+            idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
             for dt in idx_bad:
                 start_dt = dt - interval_td
                 end_dt = dt + interval_td
