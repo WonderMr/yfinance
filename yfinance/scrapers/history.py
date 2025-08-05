@@ -524,37 +524,38 @@ class PriceHistory:
         # Retry fetching rows that are entirely empty
         if _retry and mask_nan_or_zero.any():
             interval_td = utils._interval_to_timedelta(interval_user)
-            idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
-            for dt in idx_bad:
-                start_dt = dt - interval_td
-                end_dt = dt + interval_td
-                for _ in range(3):
-                    df_retry = self.history(
-                        start=start_dt,
-                        end=end_dt,
-                        interval=interval_user,
-                        prepost=prepost,
-                        actions=actions,
-                        auto_adjust=auto_adjust,
-                        back_adjust=back_adjust,
-                        repair=repair,
-                        keepna=True,
-                        rounding=rounding,
-                        timeout=timeout,
-                        raise_errors=raise_errors,
-                        _no_cache=True,
-                        _retry=False,
-                    )
-                    if df_retry.empty or dt not in df_retry.index:
-                        continue
-                    row = df_retry.loc[[dt]]
-                    if (row[data_colnames].isna() | (row[data_colnames] == 0)).all(axis=1).iloc[0]:
-                        continue
-                    for col in row.columns:
-                        if col in df.columns:
-                            df.at[dt, col] = row[col].iloc[0]
-                    break
-            mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
+            while mask_nan_or_zero.any():
+                idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
+                for dt in idx_bad:
+                    start_dt = dt - interval_td
+                    end_dt = dt + interval_td
+                    while True:
+                        df_retry = self.history(
+                            start=start_dt,
+                            end=end_dt,
+                            interval=interval_user,
+                            prepost=prepost,
+                            actions=actions,
+                            auto_adjust=auto_adjust,
+                            back_adjust=back_adjust,
+                            repair=repair,
+                            keepna=True,
+                            rounding=rounding,
+                            timeout=timeout,
+                            raise_errors=raise_errors,
+                            _no_cache=True,
+                            _retry=False,
+                        )
+                        if df_retry.empty or dt not in df_retry.index:
+                            continue
+                        row = df_retry.loc[[dt]]
+                        if (row[data_colnames].isna() | (row[data_colnames] == 0)).all(axis=1).iloc[0]:
+                            continue
+                        for col in row.columns:
+                            if col in df.columns:
+                                df.at[dt, col] = row[col].iloc[0]
+                        break
+                mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
         if keepna:
             if mask_nan_or_zero.any():
                 logger.warning(
