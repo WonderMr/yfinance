@@ -511,6 +511,13 @@ def parse_quotes(data):
     quotes.index = _pd.to_datetime(timestamps, unit="s")
     quotes.sort_index(inplace=True)
 
+    all_nan = quotes[["Open", "High", "Low", "Close"]].isna().all(axis=1)
+    if all_nan.any():
+        logger = get_yf_logger()
+        logger.debug(
+            f"Received blank OHLC for timestamps: {quotes.index[all_nan][:5].tolist()}"
+        )
+
     return quotes
 
 
