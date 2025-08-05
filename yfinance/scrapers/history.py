@@ -35,7 +35,7 @@ class PriceHistory:
                 start=None, end=None, prepost=False, actions=True,
                 auto_adjust=True, back_adjust=False, repair=False, keepna=False,
                 proxy=_SENTINEL_, rounding=False, timeout=10,
-                raise_errors=False) -> pd.DataFrame:
+                raise_errors=False, _no_cache=False) -> pd.DataFrame:
         """
         :Parameters:
             period : str
@@ -191,7 +191,7 @@ class PriceHistory:
         url = f"{_BASE_URL_}/v8/finance/chart/{self.ticker}"
         data = None
         get_fn = self._data.get
-        if end is not None:
+        if not _no_cache and end is not None:
             end_dt = pd.Timestamp(end, unit='s').tz_localize("UTC")
             dt_now = pd.Timestamp.utcnow()
             data_delay = _datetime.timedelta(minutes=30)
@@ -494,6 +494,33 @@ class PriceHistory:
         data_colnames = _PRICE_COLNAMES_ + ['Volume'] + ['Dividends', 'Stock Splits', 'Capital Gains']
         data_colnames = [c for c in data_colnames if c in df.columns]
         mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
+        if mask_nan_or_zero.all() and get_fn == self._data.cache_get:
+            logger.debug(
+                "%s: cache returned all empty rows, refetching without cache", self.ticker
+            )
+            df_refetch = self.history(
+                period=period_user,
+                interval=interval_user,
+                start=start_user,
+                end=end_user,
+                prepost=prepost,
+                actions=actions,
+                auto_adjust=auto_adjust,
+                back_adjust=back_adjust,
+                repair=repair,
+                keepna=keepna,
+                rounding=rounding,
+                timeout=timeout,
+                raise_errors=raise_errors,
+                _no_cache=True,
+            )
+            if not df_refetch.empty:
+                mask_refetch = (df_refetch[data_colnames].isna() | (df_refetch[data_colnames] == 0)).all(axis=1)
+                if not mask_refetch.all():
+                    df = df_refetch
+                    mask_nan_or_zero = mask_refetch
+                    interval = interval_user
+                    intraday = interval[-1] in ("m", 'h')
         if keepna:
             if mask_nan_or_zero.any():
                 logger.warning(
