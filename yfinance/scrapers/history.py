@@ -1,4 +1,5 @@
 from curl_cffi import requests
+from curl_cffi.requests import exceptions as req_exceptions
 from math import isclose
 import bisect
 import datetime as _datetime
@@ -11,7 +12,16 @@ import warnings
 
 from yfinance import shared, utils
 from yfinance.const import _BASE_URL_, _PRICE_COLNAMES_, _SENTINEL_
-from yfinance.exceptions import YFInvalidPeriodError, YFPricesMissingError, YFTzMissingError, YFRateLimitError
+from yfinance.exceptions import (
+    YFInvalidPeriodError,
+    YFPricesMissingError,
+    YFTzMissingError,
+    YFRateLimitError,
+    YFRequestError,
+    YFHTTPError,
+    YFConnectionError,
+    YFTimeoutError,
+)
 
 class PriceHistory:
     def __init__(self, data, ticker, tz, session=None, proxy=_SENTINEL_):
@@ -218,9 +228,28 @@ class PriceHistory:
         # Special case for rate limits
         except YFRateLimitError:
             raise
-        except Exception:
+        except req_exceptions.Timeout as e:
             if raise_errors:
-                raise
+                raise YFTimeoutError(url, timeout, e) from e
+            data = None
+        except req_exceptions.ConnectionError as e:
+            if raise_errors:
+                raise YFConnectionError(url, e) from e
+            data = None
+        except req_exceptions.HTTPError as e:
+            if raise_errors:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                text = getattr(getattr(e, "response", None), "text", "")
+                raise YFHTTPError(url, status_code, text) from e
+            data = {"status_code": getattr(getattr(e, "response", None), "status_code", None)}
+        except (req_exceptions.RequestException, req_exceptions.JSONDecodeError, req_exceptions.InvalidJSONError) as e:
+            if raise_errors:
+                raise YFRequestError(url, original_exception=e) from e
+            data = None
+        except Exception as e:
+            if raise_errors:
+                raise YFRequestError(url, original_exception=e) from e
+            data = None
 
         # Store the meta data that gets retrieved simultaneously
         try:
