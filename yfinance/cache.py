@@ -148,7 +148,18 @@ class _TzCache:
             self.initialised = 0  # failure
             return
 
-        db.connect()
+        try:
+            db.connect()
+        except _peewee.OperationalError as e:
+            get_yf_logger().info(
+                f"Failed to open TzCache DB, reason: {e}. "
+                "TzCache will not be used. "
+                "Tip: You can direct cache to use a different location with 'set_tz_cache_location(mylocation)'"
+            )
+            self.dummy = True
+            self.initialised = 0
+            return
+
         tz_db_proxy.initialize(db)
         try:
             db.create_tables([_TZ_KV])
