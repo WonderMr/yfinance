@@ -1,19 +1,18 @@
-from curl_cffi import requests
-from math import isclose
 import bisect
 import datetime as _datetime
-import dateutil as _dateutil
 import logging
-import numpy as np
-import pandas as pd
 import time as _time
 import warnings
+from math import isclose
+
+import dateutil as _dateutil
+import numpy as np
+import pandas as pd
+from curl_cffi import requests
 
 from yfinance import utils
 from yfinance.const import _BASE_URL_, _PRICE_COLNAMES_, _SENTINEL_
-from yfinance.exceptions import (
-    YFPricesMissingError,
-)
+from yfinance.exceptions import YFPricesMissingError
 
 _SECONDS_IN_DAY = 86400
 _MAX_PERIOD_1M_SECONDS = 7 * _SECONDS_IN_DAY - 3600
