@@ -182,7 +182,7 @@ _PRICE_RE = _re.compile(
     r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", _re.I
 )
 
-def _get_price_columns(df: _pd.DataFrame) -> list[str]:
+def _get_price_columns(df: _pd.DataFrame) -> List[str]:
     """Return all columns containing price data.
 
     Column names are matched case-insensitively and ignore spaces and
@@ -216,8 +216,8 @@ def _get_price_columns(df: _pd.DataFrame) -> list[str]:
 def _df_stats(
     tag: str,
     frame: _pd.DataFrame,
-    ticker: str,  # ticker symbol must be provided explicitly
-    price_cols: list[str] | None = None,
+    ticker: str,                           # ticker symbol must be provided explicitly
+    price_cols: Optional[List[str]] = None,
 ) -> None:
     """Log index range and statistics for rows containing zero prices.
 
