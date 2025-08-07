@@ -178,61 +178,63 @@ def enable_debug_mode():
 def is_isin(string):
     return bool(_re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", string))
 
-import re
-
-_PRICE_RE = re.compile(
-    r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", re.I
+_PRICE_RE = _re.compile(
+    r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", _re.I
 )
 
 def _get_price_columns(df: _pd.DataFrame) -> List[str]:
-    """Вернуть все ценовые колонки, игнорируя регистр/пробелы/подчёркивания.
-    Корректно обрабатывает простые и многоуровневые (MultiIndex) колонки.
+    """Return all columns containing price data.
+
+    Column names are matched case-insensitively and ignore spaces and
+    underscores. Works with both simple columns and those defined with a
+    MultiIndex.
     """
     price_cols = []
     if not hasattr(df, "columns"):
         return price_cols
 
     for c in df.columns:
-        # Если колонка - это кортеж (MultiIndex), берём её первый элемент.
-        # Иначе используем как есть (если это строка).
+        # If the column is a tuple (MultiIndex), use the first element.
+        # Otherwise keep the name as-is.
         column_name = c[0] if isinstance(c, tuple) else c
 
-        # Дополнительная проверка, что мы работаем со строкой
+        # Skip values that are not strings
         if not isinstance(column_name, str):
             continue
-        
-        # Проверяем имя по регулярному выражению
+
+        # Test the normalised name against the price column pattern
         if _PRICE_RE.match(column_name.replace(" ", "_")):
-            # В результат добавляем оригинальное имя колонки (строку или кортеж)
+            # Append the original column name (string or tuple)
             price_cols.append(c)
-            
+
     return price_cols
 
 # ──────────────────────────────────
-# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ СТАТИСТИКИ DF
+# Helper function for DataFrame statistics
 # ──────────────────────────────────
 
 def _df_stats(
     tag: str,
     frame: _pd.DataFrame,
-    ticker: str,                           # ← новый обязательный аргумент
+    ticker: str,                           # ticker symbol must be provided explicitly
     price_cols: Optional[List[str]] = None,
 ) -> None:
+    """Log index range and statistics for rows containing zero prices.
+
+    The ticker is passed explicitly so the function no longer depends on
+    ``self``.
     """
-    Логирует диапазон индекса и статистику по строкам с нулевыми ценами.
-    ticker передаётся явно, поэтому функция больше не зависит от self.
-    """
-    # 0. Пустой DataFrame
+    # 0. Handle empty DataFrame
     if frame.empty:
         get_yf_logger().debug(f"{ticker}: {tag}: df EMPTY")
         return
 
-    # 1. Базовая информация
+    # 1. Basic information
     start_date = frame.index[0].date()
     end_date   = frame.index[-1].date()
     total_rows = len(frame)
 
-    # 2. Определяем ценовые колонки
+    # 2. Determine price columns
     if price_cols is None:
         canonical_names = {
             "open", "high", "low", "close", "adj close",
@@ -242,20 +244,20 @@ def _df_stats(
         }
         price_cols = _get_price_columns(frame)
 
-    # 3. Считаем «нулевые» строки
+    # 3. Count rows where all price columns are zero
     zero_rows = ((frame[price_cols] == 0).all(axis=1)).sum() if price_cols else 0
 
-    # 4. Итоговый лог
+    # 4. Log summary
     get_yf_logger().debug(
         f"{ticker}: {tag}: {start_date}→{end_date}, "
         f"rows={total_rows}, zero_rows={zero_rows}"
     )
-    # 5. Логируем первые 10 строк (по возможности)
+    # 5. Log the first 10 rows when possible
     try:
         preview = frame.head(10).to_string(max_cols=frame.shape[1])
         get_yf_logger().debug(f"{ticker}: {tag}: head(10):\n{preview}")
     except Exception as e:
-        # На случай, если DataFrame содержит экзотические типы колонок
+        # Fall back if printing fails due to unusual column types
         get_yf_logger().debug(f"{ticker}: {tag}: unable to print head(10): {e}")
 
 
