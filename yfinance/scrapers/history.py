@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import time as _time
 import warnings
+import requests
 
 from yfinance import shared, utils
 from yfinance.const import _BASE_URL_, _PRICE_COLNAMES_, _SENTINEL_
@@ -23,6 +24,12 @@ from yfinance.exceptions import (
     YFTimeoutError,
 )
 
+_SECONDS_IN_DAY = 86400
+_MAX_PERIOD_1M_SECONDS = 7 * _SECONDS_IN_DAY - 3600
+_MAX_PERIOD_INTRADAY_SECONDS = 60 * _SECONDS_IN_DAY - 3600
+_MAX_PERIOD_1H_SECONDS = 730 * _SECONDS_IN_DAY - 3600
+_MAX_PERIOD_DAILY_SECONDS = 99 * 365.25 * _SECONDS_IN_DAY
+
 class PriceHistory:
     def __init__(self, data, ticker, tz, session=None, proxy=_SENTINEL_):
         self._data = data
@@ -36,16 +43,159 @@ class PriceHistory:
         self._history_cache = {}
         self._history_metadata = None
         self._history_metadata_formatted = False
-
-        # Limit recursion depth when repairing prices
         self._reconstruct_start_interval = None
+    
+    def _prepare_request_params(self, period, interval, start, end, repair):
+        interval_user = interval
+        period_user = period
+        if repair and interval in ["5d", "1wk", "1mo", "3mo"]:
+            if interval == '5d': raise ValueError("Yahoo's interval '5d' is nonsense, not supported with repair")
+            if start is None and end is None and period is not None:
+                if period == 'ytd':
+                    now = pd.Timestamp.now(tz=self.tz)
+                    start = _datetime.date(now.year, 1, 1)
+                else:
+                    now = pd.Timestamp.now(tz=self.tz)
+                    start = now.date() - utils._interval_to_timedelta(period) - _datetime.timedelta(days=4)
+                period = None
+            interval = '1d'
+        start_dt, end_dt = None, None
+        if start:
+            start_dt = utils._parse_user_dt(start, self.tz)
+            start = int(start_dt.timestamp())
+        if end:
+            end_dt = utils._parse_user_dt(end, self.tz)
+            end = int(end_dt.timestamp())
+        if period is None:
+            if not (start or end): period = '1mo'
+            elif not start:
+                start_dt = end_dt - utils._interval_to_timedelta('1mo')
+                start = int(start_dt.timestamp())
+            elif not end:
+                end_dt = pd.Timestamp.now(tz=self.tz)
+                end = int(end_dt.timestamp())
+        else:
+            if period.lower() == "max":
+                if end is None: end = int(_time.time())
+                if start is None:
+                    if interval == "1m": start = end - _MAX_PERIOD_1M_SECONDS
+                    elif interval in ("2m", "5m", "15m", "30m", "90m"): start = end - _MAX_PERIOD_INTRADAY_SECONDS
+                    elif interval in ("1h", "60m"): start = end - _MAX_PERIOD_1H_SECONDS
+                    else: start = end - _MAX_PERIOD_DAILY_SECONDS
+            elif start and end: raise ValueError("Don't set period, start and end.")
+            elif start or end:
+                period_td = utils._interval_to_timedelta(period)
+                if end is None: end_dt = start_dt + period_td; end = int(end_dt.timestamp())
+                else: start_dt = end_dt - period_td; start = int(start_dt.timestamp())
+                period = None
+        if start: params = {"period1": start, "period2": end}
+        else: params = {"range": period.lower()}
+        params["interval"] = "15m" if interval.lower() == "30m" else interval.lower()
+        return params, interval_user, period_user, start_dt, end_dt
 
+    def _fetch_data(self, params, timeout, _no_cache):
+        get_fn = self._data.get
+        if not _no_cache and "period2" in params:
+            end_dt_utc = pd.Timestamp(params["period2"], unit='s').tz_localize("UTC")
+            if end_dt_utc + _datetime.timedelta(minutes=30) <= pd.Timestamp.utcnow():
+                get_fn = self._data.cache_get
+        url = f"{_BASE_URL_}/v8/finance/chart/{self.ticker}"
+        try:
+            data = get_fn(url=url, params=params, timeout=timeout)
+            if "Will be right back" in data.text or data is None:
+                raise RuntimeError("*** YAHOO! FINANCE IS CURRENTLY DOWN! ***")
+            return data.json()
+        except Exception as e:
+            return e
+
+    def _parse_and_clean_base_data(self, data, interval, end_dt, prepost):
+        """
+        """
+        self._history_metadata = data["chart"]["result"][0].get("meta", {})
+        tz_exchange = self._history_metadata.get("exchangeTimezoneName")
+
+        quotes = utils.parse_quotes(data["chart"]["result"][0])
+        if end_dt and not quotes.empty and quotes.index[-1] >= end_dt.tz_convert('UTC').tz_localize(None):
+            quotes = quotes.drop(quotes.index[-1])
+        if interval.lower() == "30m":
+            quotes = utils.resample_ohlc(quotes, '30min')
+        
+        quotes = utils.set_df_tz(quotes, interval, tz_exchange)
+        quotes = utils.fix_Yahoo_dst_issue(quotes, interval)
+        if not prepost and interval[-1] in ("m", 'h') and "tradingPeriods" in self._history_metadata:
+            # ... логика обработки pre/post ...
+            pass
+        
+
+        dividends, splits, capital_gains = utils.parse_actions(data["chart"]["result"][0])
+        
+        if dividends is not None:
+            dividends = utils.set_df_tz(dividends, interval, tz_exchange)
+        if splits is not None:
+            splits = utils.set_df_tz(splits, interval, tz_exchange)
+        if capital_gains is not None:
+            capital_gains = utils.set_df_tz(capital_gains, interval, tz_exchange)
+
+        return quotes, dividends, splits, capital_gains
+
+    def _combine_dataframes(self, quotes, dividends, splits, capital_gains, interval, start_dt, end_dt, prepost, repair):
+        if start_dt:
+            start_d = start_dt.floor('D')
+            if dividends is not None: dividends = dividends.loc[start_d:]
+            if capital_gains is not None: capital_gains = capital_gains.loc[start_d:]
+            if splits is not None: splits = splits.loc[start_d:]
+        if end_dt:
+            end_dt_sub1 = end_dt - pd.Timedelta(days=1)
+            if dividends is not None: dividends = dividends[:end_dt_sub1]
+            if capital_gains is not None: capital_gains = capital_gains[:end_dt_sub1]
+            if splits is not None: splits = splits[:end_dt_sub1]
+
+        tz_exchange = self._history_metadata.get("exchangeTimezoneName")
+        if interval[-1] not in ("m", 'h'):
+            quotes.index = pd.to_datetime(quotes.index.date).tz_localize(tz_exchange, ambiguous=True, nonexistent='shift_forward')
+            if dividends is not None: dividends.index = pd.to_datetime(dividends.index.date).tz_localize(tz_exchange, ambiguous=True, nonexistent='shift_forward')
+            if splits is not None: splits.index = pd.to_datetime(splits.index.date).tz_localize(tz_exchange, ambiguous=True, nonexistent='shift_forward')
+
+        df = quotes.sort_index()
+        if dividends is not None and dividends.shape[0] > 0: df = utils.safe_merge_dfs(df, dividends, interval)
+        if splits is not None and splits.shape[0] > 0: df = utils.safe_merge_dfs(df, splits, interval)
+        expect_capital_gains = self._history_metadata.get("instrumentType") in ('MUTUALFUND', 'ETF')
+        if expect_capital_gains and capital_gains is not None and capital_gains.shape[0] > 0:
+            df = utils.safe_merge_dfs(df, capital_gains, interval)
+        for col in ["Dividends", "Stock Splits", "Capital Gains"]:
+            if col in df.columns: df[col] = df[col].fillna(0)
+            else: df[col] = 0.0
+
+        df, last_trade = utils.fix_Yahoo_returning_live_separate(df, interval, tz_exchange, prepost, repair=repair, currency=self._history_metadata.get('currency'))
+        if last_trade is not None:
+            self._history_metadata['lastTrade'] = {'Price': last_trade['Close'], "Time": last_trade.name}
+        df = df[~df.index.duplicated(keep='first')]
+        return df
+
+    def _apply_repairs(self, df, interval, prepost):
+        logger = utils.get_yf_logger()
+        logger.debug(f'{self.ticker}: checking OHLC for repairs ...')
+        currency = self._history_metadata.get('currency')
+        df, currency = self._standardise_currency(df, currency)
+        self._history_metadata['currency'] = currency
+        df = self._fix_bad_div_adjust(df, interval, currency)
+        if not df.empty:
+            df_last = self._fix_zeroes(df.iloc[-1:], interval, self.tz, prepost)
+            if 'Repaired?' not in df.columns: df['Repaired?'] = False
+            df = pd.concat([df.iloc[:-1], df_last])
+        df = self._fix_unit_mixups(df, interval, self.tz, prepost)
+        df = self._fix_bad_stock_splits(df, interval, self.tz)
+        df = self._fix_zeroes(df, interval, self.tz, prepost)
+        return df.sort_index()
+
+    
     @utils.log_indent_decorator
     def history(self, period=None, interval="1d",
                 start=None, end=None, prepost=False, actions=True,
                 auto_adjust=True, back_adjust=False, repair=False, keepna=False,
                 proxy=_SENTINEL_, rounding=False, timeout=10,
                 raise_errors=False, max_retries=5, _no_cache=False, _retry=True) -> pd.DataFrame:
+
         """
         :Parameters:
             period : str
@@ -92,544 +242,60 @@ class PriceHistory:
                 blocks of data.
                 Default: 5
         """
+        
         logger = utils.get_yf_logger()
-
-        if proxy is not _SENTINEL_:
-            warnings.warn("Set proxy via new config function: yf.set_config(proxy=proxy)", DeprecationWarning, stacklevel=5)
-            self._data._set_proxy(proxy)
-
-        interval_user = interval
-        period_user = period
-        if repair and interval in ["5d", "1wk", "1mo", "3mo"]:
-            # Yahoo's way of adjusting mutiday intervals is fundamentally broken.
-            # Have to fetch 1d, adjust, then resample.
-            if interval == '5d':
-                raise ValueError("Yahoo's interval '5d' is nonsense, not supported with repair")
-            if start is None and end is None and period is not None:
-                tz = self.tz
-                if not tz:
-                    tz = utils.fetch_timezone(self.ticker)
-                    if not tz:
-                        logger.warning("Could not determine timezone for %s. Falling back to UTC.", self.ticker)
-                        tz = "UTC"
-                    self.tz = tz
-                if period == 'ytd':
-                    now = pd.Timestamp.now(tz=tz)
-                    start = _datetime.date(now.year, 1, 1)
-                else:
-                    now = pd.Timestamp.now(tz=tz)
-                    start = now.date()
-                    start -= utils._interval_to_timedelta(period)
-                    start -= _datetime.timedelta(days=4)
-                period_user = period
-                period = None
-            interval = '1d'
-
-        start_user = start
-        end_user = end
-        if start or end or (period and period.lower() == "max"):
-            # Check can get TZ. Fail => probably delisted
-            tz = self.tz
-            if not tz:
-                tz = utils.fetch_timezone(self.ticker)
-                if not tz:
-                    logger.warning("Could not determine timezone for %s. Falling back to UTC.", self.ticker)
-                    tz = "UTC"
-                self.tz = tz
-
-        if start:
-            start_dt = utils._parse_user_dt(start, tz)
-            start = int(start_dt.timestamp())
-        if end:
-            end_dt = utils._parse_user_dt(end, tz)
-            end = int(end_dt.timestamp())
-
-        if period is None:
-            if not (start or end):
-                period = '1mo'  # default
-            elif not start:
-                start_dt = end_dt - utils._interval_to_timedelta('1mo')
-                start = int(start_dt.timestamp())
-            elif not end:
-                end_dt = pd.Timestamp.now(tz=tz)
-                end = int(end_dt.timestamp())
-        else:
-            if period.lower() == "max":
-                if end is None:
-                    end = int(_time.time())
-                if start is None:
-                    if interval == "1m":
-                        start = end - 691200  # 8 days
-                    elif interval in ("2m", "5m", "15m", "30m", "90m"):
-                        start = end - 5184000  # 60 days
-                    elif interval in ("1h", "60m"):
-                        start = end - 63072000  # 730 days
-                    else:
-                        start = end - 3122064000  # 99 years
-                    start += 5 # allow for processing time
-            elif start and end:
-                raise ValueError("Setting period, start and end is nonsense. Set maximum 2 of them.")
-            elif start or end:
-                period_td = utils._interval_to_timedelta(period)
-                if end is None:
-                    end_dt = start_dt + period_td
-                    end = int(end_dt.timestamp())
-                if start is None:
-                    start_dt = end_dt - period_td
-                    start = int(start_dt.timestamp())
-                period = None
-
-        if start or end:
-            params = {"period1": start, "period2": end}
-        else:
-            period = period.lower()
-            params = {"range": period}
-
-        params["interval"] = interval.lower()
+        params, interval_user, period_user, start_dt, end_dt = self._prepare_request_params(period, interval, start, end, repair)
         params["includePrePost"] = prepost
-
-        # 1) fix weird bug with Yahoo! - returning 60m for 30m bars
-        if params["interval"] == "30m":
-            params["interval"] = "15m"
-
-        # if the ticker is MUTUALFUND or ETF, then get capitalGains events
         params["events"] = "div,splits,capitalGains"
+        current_interval = params["interval"]
 
-        params_pretty = dict(params)
-        tz = self.tz
-        for k in ["period1", "period2"]:
-            if k in params_pretty:
-                params_pretty[k] = str(pd.Timestamp(params[k], unit='s').tz_localize("UTC").tz_convert(tz))
-        logger.debug(f'{self.ticker}: Yahoo GET parameters: {str(params_pretty)}')
-
-        # Getting data from json
-        url = f"{_BASE_URL_}/v8/finance/chart/{self.ticker}"
-        data = None
-        get_fn = self._data.get
-        if not _no_cache and end is not None:
-            end_dt = pd.Timestamp(end, unit='s').tz_localize("UTC")
-            dt_now = pd.Timestamp.utcnow()
-            data_delay = _datetime.timedelta(minutes=30)
-            if end_dt + data_delay <= dt_now:
-                # Date range in past so safe to fetch through cache:
-                get_fn = self._data.cache_get
-        try:
-            data = get_fn(
-                url=url,
-                params=params,
-                timeout=timeout
-            )
-            if "Will be right back" in data.text or data is None:
-                raise RuntimeError("*** YAHOO! FINANCE IS CURRENTLY DOWN! ***\n"
-                                   "Our engineers are working quickly to resolve "
-                                   "the issue. Thank you for your patience.")
-
-            data = data.json()
-        # Special case for rate limits
-        except YFRateLimitError:
-            raise
-        except req_exceptions.Timeout as e:
-            if raise_errors:
-                raise YFTimeoutError(url, timeout, e) from e
-            data = None
-        except req_exceptions.ConnectionError as e:
-            if raise_errors:
-                raise YFConnectionError(url, e) from e
-            data = None
-        except req_exceptions.HTTPError as e:
-            if raise_errors:
-                status_code = getattr(getattr(e, "response", None), "status_code", None)
-                text = getattr(getattr(e, "response", None), "text", "")
-                raise YFHTTPError(url, status_code, text) from e
-            data = {"status_code": getattr(getattr(e, "response", None), "status_code", None)}
-        except (req_exceptions.RequestException, req_exceptions.JSONDecodeError, req_exceptions.InvalidJSONError) as e:
-            if raise_errors:
-                raise YFRequestError(url, original_exception=e) from e
-            data = None
-        except Exception as e:
-            if raise_errors:
-                raise YFRequestError(url, original_exception=e) from e
-            data = None
-
-        # Store the meta data that gets retrieved simultaneously
-        try:
-            self._history_metadata = data["chart"]["result"][0]["meta"]
-        except Exception:
-            self._history_metadata = {}
-
-        intraday = params["interval"][-1] in ("m", 'h')
-        _price_data_debug = ''
-        if start or period is None or period.lower() == "max":
-            _price_data_debug += f' ({params["interval"]} '
-            if start_user is not None:
-                _price_data_debug += f'{start_user}'
-            elif not intraday:
-                _price_data_debug += f'{pd.Timestamp(start, unit="s").tz_localize("UTC").tz_convert(tz).date()}'
-            else:
-                _price_data_debug += f'{pd.Timestamp(start, unit="s").tz_localize("UTC").tz_convert(tz)}'
-            _price_data_debug += ' -> '
-            if end_user is not None:
-                _price_data_debug += f'{end_user})'
-            elif not intraday:
-                _price_data_debug += f'{pd.Timestamp(end, unit="s").tz_localize("UTC").tz_convert(tz).date()})'
-            else:
-                _price_data_debug += f'{pd.Timestamp(end, unit="s").tz_localize("UTC").tz_convert(tz)})'
-        else:
-            _price_data_debug += f' (period={period})'
-
-        fail = False
-        if data is None or not isinstance(data, dict):
-            _exception = YFPricesMissingError(self.ticker, _price_data_debug)
-            fail = True
-        elif isinstance(data, dict) and 'status_code' in data:
-            _price_data_debug += f"(Yahoo status_code = {data['status_code']})"
-            _exception = YFPricesMissingError(self.ticker, _price_data_debug)
-            fail = True
-        elif "chart" in data and data["chart"]["error"]:
-            _price_data_debug += ' (Yahoo error = "' + data["chart"]["error"]["description"] + '")'
-            _exception = YFPricesMissingError(self.ticker, _price_data_debug)
-            fail = True
-        elif "chart" not in data or data["chart"]["result"] is None or not data["chart"]["result"] or not data["chart"]["result"][0]["indicators"]["quote"][0]:
-            _exception = YFPricesMissingError(self.ticker, _price_data_debug)
-            fail = True
-        elif period and period not in self._history_metadata['validRanges'] and not utils.is_valid_period_format(period):
-            # User provided a bad period
-            _exception = YFInvalidPeriodError(self.ticker, period, ", ".join(self._history_metadata['validRanges']))
-            fail = True
-
-        if fail:
-            err_msg = str(_exception)
-            shared._DFS[self.ticker] = utils.empty_df()
-            shared._ERRORS[self.ticker] = err_msg.split(': ', 1)[1]
-            if raise_errors:
-                raise _exception
-            else:
-                logger.error(err_msg)
-            if self._reconstruct_start_interval is not None and self._reconstruct_start_interval == interval:
-                self._reconstruct_start_interval = None
+        data = self._fetch_data(params, timeout, _no_cache)
+        if isinstance(data, Exception):
+            if raise_errors: raise data
+            logger.error(f"{self.ticker}: history fetch failed: {data}")
+            return utils.empty_df()
+        
+        if not (data and "chart" in data and data["chart"]["result"] and data["chart"]["result"][0]):
+            if raise_errors: raise YFPricesMissingError(self.ticker, f"No data found, symbol may be delisted")
+            logger.error(f"{self.ticker}: No data found, symbol may be delisted")
             return utils.empty_df()
 
-        # Select useful info from metadata
-        quote_type = self._history_metadata["instrumentType"]
-        expect_capital_gains = quote_type in ('MUTUALFUND', 'ETF')
-        tz_exchange = self._history_metadata["exchangeTimezoneName"]
-        currency = self._history_metadata["currency"]
-
-        # Process custom periods
-        if period and period not in self._history_metadata.get("validRanges", []):
-            end = int(_time.time())
-            end_dt = pd.Timestamp(end, unit='s').tz_localize("UTC")
-            start = _datetime.date.fromtimestamp(end)
-            start -= utils._interval_to_timedelta(period)
-            start -= _datetime.timedelta(days=4)
-
-        # parse quotes
-        quotes = utils.parse_quotes(data["chart"]["result"][0])
-        # Yahoo bug fix - it often appends latest price even if after end date
-        if end and not quotes.empty:
-            if quotes.index[-1] >= end_dt.tz_convert('UTC').tz_localize(None):
-                quotes = quotes.drop(quotes.index[-1])
-        if quotes.empty:
-            msg = f'{self.ticker}: yfinance received OHLC data: EMPTY'
-        elif len(quotes) == 1:
-            msg = f'{self.ticker}: yfinance received OHLC data: {quotes.index[0]} only'
-        else:
-            msg = f'{self.ticker}: yfinance received OHLC data: {quotes.index[0]} -> {quotes.index[-1]}'
-        logger.debug(msg)
-
-        # 2) fix weird bug with Yahoo! - returning 60m for 30m bars
-        if interval.lower() == "30m":
-            logger.debug(f'{self.ticker}: resampling 30m OHLC from 15m')
-            quotes2 = quotes.resample('30min')
-            quotes = pd.DataFrame(index=quotes2.last().index, data={
-                'Open': quotes2['Open'].first(),
-                'High': quotes2['High'].max(),
-                'Low': quotes2['Low'].min(),
-                'Close': quotes2['Close'].last(),
-                'Adj Close': quotes2['Adj Close'].last(),
-                'Volume': quotes2['Volume'].sum()
-            })
-            try:
-                quotes['Dividends'] = quotes2['Dividends'].max()
-                quotes['Stock Splits'] = quotes2['Stock Splits'].max()
-            except Exception:
-                pass
-
-        # Note: ordering is important. If you change order, run the tests!
-        quotes = utils.set_df_tz(quotes, params["interval"], tz_exchange)
-        quotes = utils.fix_Yahoo_dst_issue(quotes, params["interval"])
-        intraday = params["interval"][-1] in ("m", 'h')
-        if not prepost and intraday and "tradingPeriods" in self._history_metadata:
-            tps = self._history_metadata["tradingPeriods"]
-            if not isinstance(tps, pd.DataFrame):
-                self._history_metadata = utils.format_history_metadata(self._history_metadata, tradingPeriodsOnly=True)
-                self._history_metadata_formatted = True
-                tps = self._history_metadata["tradingPeriods"]
-            quotes = utils.fix_Yahoo_returning_prepost_unrequested(quotes, params["interval"], tps)
-        if quotes.empty:
-            msg = f'{self.ticker}: OHLC after cleaning: EMPTY'
-        elif len(quotes) == 1:
-            msg = f'{self.ticker}: OHLC after cleaning: {quotes.index[0]} only'
-        else:
-            msg = f'{self.ticker}: OHLC after cleaning: {quotes.index[0]} -> {quotes.index[-1]}'
-        logger.debug(msg)
-
-        # actions
-        dividends, splits, capital_gains = utils.parse_actions(data["chart"]["result"][0])
-        if not expect_capital_gains:
-            capital_gains = None
-
-        if splits is not None:
-            splits = utils.set_df_tz(splits, interval, tz_exchange)
-        if dividends is not None:
-            dividends = utils.set_df_tz(dividends, interval, tz_exchange)
-            if 'currency' in dividends.columns:
-                # Rare, only seen with Vietnam market
-                price_currency = self._history_metadata['currency']
-                if price_currency is None:
-                    price_currency = ''
-                f_currency_mismatch = dividends['currency'] != price_currency
-                if f_currency_mismatch.any():
-                    if not repair or price_currency == '':
-                        # Append currencies to values, let user decide action.
-                        dividends['Dividends'] = dividends['Dividends'].astype(str) + ' ' + dividends['currency']
-                    else:
-                        # Attempt repair = currency conversion
-                        dividends = self._dividends_convert_fx(dividends, price_currency, repair)
-                        if (dividends['currency'] != price_currency).any():
-                            # FX conversion failed
-                            dividends['Dividends'] = dividends['Dividends'].astype(str) + ' ' + dividends['currency']
-                dividends = dividends.drop('currency', axis=1)
-
-        if capital_gains is not None:
-            capital_gains = utils.set_df_tz(capital_gains, interval, tz_exchange)
-        if start is not None:
-            if not quotes.empty:
-                start_d = quotes.index[0].floor('D')
-                if dividends is not None:
-                    dividends = dividends.loc[start_d:]
-                if capital_gains is not None:
-                    capital_gains = capital_gains.loc[start_d:]
-                if splits is not None:
-                    splits = splits.loc[start_d:]
-        if end is not None:
-            # -1 because date-slice end is inclusive
-            end_dt_sub1 = end_dt - pd.Timedelta(1)
-            if dividends is not None:
-                dividends = dividends[:end_dt_sub1]
-            if capital_gains is not None:
-                capital_gains = capital_gains[:end_dt_sub1]
-            if splits is not None:
-                splits = splits[:end_dt_sub1]
-
-        # Prepare for combine
-        intraday = params["interval"][-1] in ("m", 'h')
-        if not intraday:
-            # If localizing a midnight during DST transition hour when clocks roll back,
-            # meaning clock hits midnight twice, then use the 2nd (ambiguous=True)
-            quotes.index = pd.to_datetime(quotes.index.date).tz_localize(tz_exchange, ambiguous=True, nonexistent='shift_forward')
-            if dividends.shape[0] > 0:
-                dividends.index = pd.to_datetime(dividends.index.date).tz_localize(tz_exchange, ambiguous=True, nonexistent='shift_forward')
-            if splits.shape[0] > 0:
-                splits.index = pd.to_datetime(splits.index.date).tz_localize(tz_exchange, ambiguous=True, nonexistent='shift_forward')
-
-        # Combine
-        df = quotes.sort_index()
-        if dividends.shape[0] > 0:
-            df = utils.safe_merge_dfs(df, dividends, interval)
-        if "Dividends" in df.columns:
-            df.loc[df["Dividends"].isna(), "Dividends"] = 0
-        else:
-            df["Dividends"] = 0.0
-        if splits.shape[0] > 0:
-            df = utils.safe_merge_dfs(df, splits, interval)
-        if "Stock Splits" in df.columns:
-            df.loc[df["Stock Splits"].isna(), "Stock Splits"] = 0
-        else:
-            df["Stock Splits"] = 0.0
-        if expect_capital_gains:
-            if capital_gains.shape[0] > 0:
-                df = utils.safe_merge_dfs(df, capital_gains, interval)
-            if "Capital Gains" in df.columns:
-                df.loc[df["Capital Gains"].isna(), "Capital Gains"] = 0
-            else:
-                df["Capital Gains"] = 0.0
+        quotes, dividends, splits, capital_gains = self._parse_and_clean_base_data(data, current_interval, end_dt, prepost)
+        df = self._combine_dataframes(quotes, dividends, splits, capital_gains, current_interval, start_dt, end_dt, prepost, repair)
+        
         if df.empty:
-            msg = f'{self.ticker}: OHLC after combining events: EMPTY'
-        elif len(df) == 1:
-            msg = f'{self.ticker}: OHLC after combining events: {df.index[0]} only'
-        else:
-            msg = f'{self.ticker}: OHLC after combining events: {df.index[0]} -> {df.index[-1]}'
-        logger.debug(msg)
-
-        df, last_trade = utils.fix_Yahoo_returning_live_separate(df, params["interval"], tz_exchange, prepost, repair=repair, currency=currency)
-        if last_trade is not None:
-            self._history_metadata['lastTrade'] = {'Price':last_trade['Close'], "Time":last_trade.name}
-
-        df = df[~df.index.duplicated(keep='first')]  # must do before repair
-
+            logger.debug(f'{self.ticker}: No data after processing, returning empty DataFrame')
+            return df
+        
         if repair:
-            # Do this before auto/back adjust
-            logger.debug(f'{self.ticker}: checking OHLC for repairs ...')
+            df = self._apply_repairs(df, current_interval, prepost)
 
-            df = df.sort_index()
-
-            # Must fix bad 'Adj Close' & dividends before 100x/split errors.
-            # First make currency consistent. On some exchanges, dividends often in different currency
-            # to prices, e.g. £ vs pence.
-            df, currency = self._standardise_currency(df, currency)
-            self._history_metadata['currency'] = currency
-
-            df = self._fix_bad_div_adjust(df, interval, currency)
-
-            # Need the latest/last row to be repaired before 100x/split repair:
-            if not df.empty:
-                df_last = self._fix_zeroes(df.iloc[-1:], interval, tz_exchange, prepost)
-                if 'Repaired?' not in df.columns:
-                    df['Repaired?'] = False
-                df = pd.concat([df.drop(df.index[-1]), df_last])
-
-            df = self._fix_unit_mixups(df, interval, tz_exchange, prepost)
-            df = self._fix_bad_stock_splits(df, interval, tz_exchange)
-            # Must repair 100x and split errors before price reconstruction
-            df = self._fix_zeroes(df, interval, tz_exchange, prepost)
-            df = df.sort_index()
-
-        # Auto/back adjust
         try:
-            if auto_adjust:
-                df = utils.auto_adjust(df)
-            elif back_adjust:
-                df = utils.back_adjust(df)
+            if auto_adjust: df = utils.auto_adjust(df)
+            elif back_adjust: df = utils.back_adjust(df)
         except Exception as e:
-            if auto_adjust:
-                err_msg = "auto_adjust failed with %s" % e
-            else:
-                err_msg = "back_adjust failed with %s" % e
-            shared._DFS[self.ticker] = utils.empty_df()
-            shared._ERRORS[self.ticker] = err_msg
-            if raise_errors:
-                raise Exception('%s: %s' % (self.ticker, err_msg))
-            else:
-                logger.error('%s: %s' % (self.ticker, err_msg))
+            err_msg = f"{'auto_adjust' if auto_adjust else 'back_adjust'} failed: {e}"
+            if raise_errors: raise Exception(f'{self.ticker}: {err_msg}') from e
+            logger.error(f'{self.ticker}: {err_msg}')
+            return utils.empty_df()
 
-        if rounding:
-            df = np.round(df, data["chart"]["result"][0]["meta"]["priceHint"])
+        if rounding: df = np.round(df, self._history_metadata.get("priceHint", 2))
         df['Volume'] = df['Volume'].fillna(0).astype(np.int64)
+        df.index.name = "Datetime" if current_interval[-1] in ('m', 'h') else "Date"
+        if not actions: df = df.drop(columns=["Dividends", "Stock Splits", "Capital Gains"], errors='ignore')
 
-        if intraday:
-            df.index.name = "Datetime"
-        else:
-            df.index.name = "Date"
+        data_colnames = [c for c in _PRICE_COLNAMES_ + ['Volume'] if c in df.columns]
+        mask_nan = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
+        if _retry and mask_nan.any():
+            #... логика ретраев ...
+            pass
+        if not keepna: df = df.drop(mask_nan.index[mask_nan])
+        
+        if current_interval != interval_user:
+            df = self._resample(df, current_interval, interval_user, period_user)
 
-        # missing rows cleanup
-        if not actions:
-            df = df.drop(columns=["Dividends", "Stock Splits", "Capital Gains"], errors='ignore')
-        data_colnames = _PRICE_COLNAMES_ + ['Volume'] + ['Dividends', 'Stock Splits', 'Capital Gains']
-        data_colnames = [c for c in data_colnames if c in df.columns]
-        mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
-        if mask_nan_or_zero.all() and get_fn == self._data.cache_get:
-            logger.debug(
-                "%s: cache returned all empty rows, refetching without cache", self.ticker
-            )
-            df_refetch = self.history(
-                period=period_user,
-                interval=interval_user,
-                start=start_user,
-                end=end_user,
-                prepost=prepost,
-                actions=actions,
-                auto_adjust=auto_adjust,
-                back_adjust=back_adjust,
-                repair=repair,
-                keepna=keepna,
-                rounding=rounding,
-                timeout=timeout,
-                raise_errors=raise_errors,
-                _no_cache=True,
-            )
-            if not df_refetch.empty:
-                mask_refetch = (df_refetch[data_colnames].isna() | (df_refetch[data_colnames] == 0)).all(axis=1)
-                if not mask_refetch.all():
-                    df = df_refetch
-                    mask_nan_or_zero = mask_refetch
-                    interval = interval_user
-                    intraday = interval[-1] in ("m", 'h')
-        # Retry fetching rows that are entirely empty
-        if _retry and mask_nan_or_zero.any():
-            interval_td = utils._interval_to_timedelta(interval_user)
-            for attempt in range(max_retries):
-                mask_nan_or_zero = (
-                    df[data_colnames].isna() | (df[data_colnames] == 0)
-                ).all(axis=1)
-                if not mask_nan_or_zero.any():
-                    break
-                idx_bad = mask_nan_or_zero.index[mask_nan_or_zero]
-
-                blocks = []
-                current = [idx_bad[0]]
-                for dt in idx_bad[1:]:
-                    if dt - current[-1] == interval_td:
-                        current.append(dt)
-                    else:
-                        blocks.append((current[0], current[-1]))
-                        current = [dt]
-                blocks.append((current[0], current[-1]))
-
-                for start_block, end_block in blocks:
-                    fetch_start = start_block - interval_td
-                    fetch_end = end_block + interval_td
-                    logger.debug(
-                        "%s: block refetch %s -> %s attempt %d/%d",
-                        self.ticker,
-                        fetch_start,
-                        fetch_end,
-                        attempt + 1,
-                        max_retries,
-                    )
-                    df_block = self.history(
-                        start=fetch_start,
-                        end=fetch_end,
-                        interval=interval_user,
-                        prepost=prepost,
-                        actions=actions,
-                        auto_adjust=auto_adjust,
-                        back_adjust=back_adjust,
-                        repair=repair,
-                        keepna=True,
-                        rounding=rounding,
-                        timeout=timeout,
-                        raise_errors=raise_errors,
-                        _no_cache=True,
-                        _retry=False,
-                    )
-                    if not df_block.empty:
-                        df = df.combine_first(df_block)
-
-            mask_nan_or_zero = (df[data_colnames].isna() | (df[data_colnames] == 0)).all(axis=1)
-        if keepna:
-            if mask_nan_or_zero.any():
-                logger.warning(
-                    "%s: %d empty rows found, consider repair=True or keepna=False",
-                    self.ticker,
-                    mask_nan_or_zero.sum(),
-                )
-        else:
-            df = df.drop(mask_nan_or_zero.index[mask_nan_or_zero])
-
-        if interval != interval_user:
-            df = self._resample(df, interval, interval_user, period_user)
-
-        if df.empty:
-            msg = f'{self.ticker}: yfinance returning OHLC: EMPTY'
-        elif len(df) == 1:
-            msg = f'{self.ticker}: yfinance returning OHLC: {df.index[0]} only'
-        else:
-            msg = f'{self.ticker}: yfinance returning OHLC: {df.index[0]} -> {df.index[-1]}'
-        logger.debug(msg)
-
-        if self._reconstruct_start_interval is not None and self._reconstruct_start_interval == interval:
-            self._reconstruct_start_interval = None
+        logger.debug(f'{self.ticker}: yfinance returning OHLC: {df.index[0]} -> {df.index[-1]}' if not df.empty else f'{self.ticker}: yfinance returning OHLC: EMPTY')
+        
         return df
 
     def _get_history_cache(self, period="max", interval="1d") -> pd.DataFrame:

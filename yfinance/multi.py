@@ -40,8 +40,8 @@ from .const import _SENTINEL_
 def download(tickers, start=None, end=None, actions=False, threads=True,
              ignore_tz=None, group_by='column', auto_adjust=None, back_adjust=False,
              repair=False, keepna=False, progress=True, period=None, interval="1d",
-             prepost=False, proxy=_SENTINEL_, rounding=False, timeout=10, session=None,
-             multi_level_index=True) -> Union[_pd.DataFrame, None]:
+             prepost=False, proxy=_SENTINEL_, rounding=False, timeout=10, session=None,             
+             multi_level_index=True, _retry=True) -> Union[_pd.DataFrame, None]:
     """
     Download yahoo tickers
     :Parameters:
@@ -201,7 +201,7 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
                                      start=start, end=end, prepost=prepost,
                                      actions=actions, auto_adjust=auto_adjust,
                                      back_adjust=back_adjust, repair=repair, keepna=keepna,
-                                     rounding=rounding, timeout=timeout)
+                                     rounding=rounding, timeout=timeout, _retry=_retry)
                 with shared._DFS_LOCK:
                     shared._DFS[ticker.upper()] = data
             except Exception as e:
@@ -260,9 +260,36 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
                     shared._DFS[tkr].index = shared._DFS[tkr].index.tz_localize(None)
 
     try:
-        with shared._DFS_LOCK:
-            data = _pd.concat(shared._DFS.values(), axis=1, sort=True,
-                              keys=shared._DFS.keys(), names=['Ticker', 'Price'])
+        # ───────────────────────────────
+        # 1. ЛОГИ ДО СКЛЕЙКИ
+        # ───────────────────────────────
+        with shared._DFS_LOCK:                                   # уже держим тот же замок, что и concat
+            for tkr, df_single in shared._DFS.items():           # проходимся по всем сохранённым DataFrame-ам
+                if df_single is not None and not df_single.empty:
+                    utils._df_stats("BEFORE_CONCAT", df_single, tkr)
+                else:
+                    utils.get_yf_logger().debug(f"{tkr}: BEFORE_CONCAT: df EMPTY")
+
+        # ───────────────────────────────
+        # 2. САМ _pd.concat(...)
+        # ───────────────────────────────
+        data = _pd.concat(
+            shared._DFS.values(),            # все df-ы
+            axis=1,                          # склеиваем по столбцам
+            sort=True,
+            keys=shared._DFS.keys(),         # первый уровень MultiIndex = тикер
+            names=['Ticker', 'Price']
+        )
+
+        # ───────────────────────────────
+        # 3. ЛОГИ ПОСЛЕ СКЛЕЙКИ
+        # ───────────────────────────────
+        # data теперь имеет колонки MultiIndex (Ticker → Price-поля).
+        for tkr in data.columns.levels[0]:                       # первый уровень = список тикеров
+            df_slice = data[tkr]                                 # срез по тикеру («под-DataFrame»)
+            # df_slice всё ещё DataFrame: столбцы Open/High/Low/Close/...
+            utils._df_stats("AFTER_CONCAT", df_slice, tkr)
+
     except Exception:
         _realign_dfs()
         with shared._DFS_LOCK:
@@ -311,14 +338,15 @@ def _download_one(ticker, start=None, end=None,
                   auto_adjust=False, back_adjust=False, repair=False,
                   actions=False, period="max", interval="1d",
                   prepost=False, rounding=False,
-                  keepna=False, timeout=10):
+                  keepna=False, timeout=10,
+                  _retry=True):
     data = Ticker(ticker).history(
             period=period, interval=interval,
             start=start, end=end, prepost=prepost,
             actions=actions, auto_adjust=auto_adjust,
             back_adjust=back_adjust, repair=repair,
             rounding=rounding, keepna=keepna, timeout=timeout,
-            raise_errors=True
+            raise_errors=True, _retry=_retry
     )
 
     return data
@@ -327,14 +355,15 @@ def _download_one(ticker, start=None, end=None,
 def _download_one_threaded(ticker, start=None, end=None,
                            auto_adjust=False, back_adjust=False, repair=False,
                            actions=False, period="max", interval="1d",
-                           prepost=False, rounding=False,
-                           keepna=False, timeout=10):
+                           prepost=False, rounding=False, 
+                           keepna=False, timeout=10, _retry=True):
     try:
         return _download_one(ticker, start=start, end=end,
                               auto_adjust=auto_adjust, back_adjust=back_adjust,
                               repair=repair, actions=actions, period=period,
                               interval=interval, prepost=prepost,
-                              rounding=rounding, keepna=keepna, timeout=timeout)
+                              rounding=rounding, keepna=keepna, timeout=timeout,
+                              _retry=_retry)
     finally:
         if shared._PROGRESS_BAR is not None:
             with shared._PROGRESS_BAR_LOCK:

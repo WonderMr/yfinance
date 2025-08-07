@@ -178,6 +178,88 @@ def enable_debug_mode():
 def is_isin(string):
     return bool(_re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", string))
 
+import re
+
+_PRICE_RE = re.compile(
+    r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", re.I
+)
+
+def _get_price_columns(df: _pd.DataFrame) -> list[str]:
+    """Вернуть все ценовые колонки, игнорируя регистр/пробелы/подчёркивания.
+    Корректно обрабатывает простые и многоуровневые (MultiIndex) колонки.
+    """
+    price_cols = []
+    if not hasattr(df, "columns"):
+        return price_cols
+
+    for c in df.columns:
+        # Если колонка - это кортеж (MultiIndex), берём её первый элемент.
+        # Иначе используем как есть (если это строка).
+        column_name = c[0] if isinstance(c, tuple) else c
+
+        # Дополнительная проверка, что мы работаем со строкой
+        if not isinstance(column_name, str):
+            continue
+        
+        # Проверяем имя по регулярному выражению
+        if _PRICE_RE.match(column_name.replace(" ", "_")):
+            # В результат добавляем оригинальное имя колонки (строку или кортеж)
+            price_cols.append(c)
+            
+    return price_cols
+
+# ──────────────────────────────────
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ СТАТИСТИКИ DF
+# ──────────────────────────────────
+
+def _df_stats(
+    tag: str,
+    frame: _pd.DataFrame,
+    ticker: str,                           # ← новый обязательный аргумент
+    price_cols: list[str] | None = None,
+) -> None:
+    """
+    Логирует диапазон индекса и статистику по строкам с нулевыми ценами.
+    ticker передаётся явно, поэтому функция больше не зависит от self.
+    """
+    # 0. Пустой DataFrame
+    if frame.empty:
+        get_yf_logger().debug(f"{ticker}: {tag}: df EMPTY")
+        return
+
+    # 1. Базовая информация
+    start_date = frame.index[0].date()
+    end_date   = frame.index[-1].date()
+    total_rows = len(frame)
+
+    # 2. Определяем ценовые колонки
+    if price_cols is None:
+        canonical_names = {
+            "open", "high", "low", "close", "adj close",
+            "adjclose", "adj_close",
+            "open_price", "high_price", "low_price", "close_price",
+            "adj_close_price"
+        }
+        price_cols = _get_price_columns(frame)
+
+    # 3. Считаем «нулевые» строки
+    zero_rows = ((frame[price_cols] == 0).all(axis=1)).sum() if price_cols else 0
+
+    # 4. Итоговый лог
+    get_yf_logger().debug(
+        f"{ticker}: {tag}: {start_date}→{end_date}, "
+        f"rows={total_rows}, zero_rows={zero_rows}"
+    )
+    # 5. Логируем первые 10 строк (по возможности)
+    try:
+        preview = frame.head(10).to_string(max_cols=frame.shape[1])
+        get_yf_logger().debug(f"{ticker}: {tag}: head(10):\n{preview}")
+    except Exception as e:
+        # На случай, если DataFrame содержит экзотические типы колонок
+        get_yf_logger().debug(f"{ticker}: {tag}: unable to print head(10): {e}")
+
+
+
 
 def get_all_by_isin(isin):
     if not (is_isin(isin)):
