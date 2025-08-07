@@ -184,7 +184,7 @@ _PRICE_RE = re.compile(
     r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", re.I
 )
 
-def _get_price_columns(df: _pd.DataFrame) -> list[str]:
+def _get_price_columns(df: _pd.DataFrame) -> List[str]:
     """Вернуть все ценовые колонки, игнорируя регистр/пробелы/подчёркивания.
     Корректно обрабатывает простые и многоуровневые (MultiIndex) колонки.
     """
@@ -216,7 +216,7 @@ def _df_stats(
     tag: str,
     frame: _pd.DataFrame,
     ticker: str,                           # ← новый обязательный аргумент
-    price_cols: list[str] | None = None,
+    price_cols: Optional[List[str]] = None,
 ) -> None:
     """
     Логирует диапазон индекса и статистику по строкам с нулевыми ценами.
