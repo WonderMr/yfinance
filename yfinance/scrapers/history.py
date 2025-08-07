@@ -1,5 +1,4 @@
 from curl_cffi import requests
-from curl_cffi.requests import exceptions as req_exceptions
 from math import isclose
 import bisect
 import datetime as _datetime
@@ -10,17 +9,10 @@ import pandas as pd
 import time as _time
 import warnings
 
-from yfinance import shared, utils
+from yfinance import utils
 from yfinance.const import _BASE_URL_, _PRICE_COLNAMES_, _SENTINEL_
 from yfinance.exceptions import (
-    YFInvalidPeriodError,
     YFPricesMissingError,
-    YFTzMissingError,
-    YFRateLimitError,
-    YFRequestError,
-    YFHTTPError,
-    YFConnectionError,
-    YFTimeoutError,
 )
 
 _SECONDS_IN_DAY = 86400
