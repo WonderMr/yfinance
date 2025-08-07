@@ -178,10 +178,8 @@ def enable_debug_mode():
 def is_isin(string):
     return bool(_re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", string))
 
-import re
-
-_PRICE_RE = re.compile(
-    r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", re.I
+_PRICE_RE = _re.compile(
+    r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", _re.I
 )
 
 def _get_price_columns(df: _pd.DataFrame) -> list[str]:
