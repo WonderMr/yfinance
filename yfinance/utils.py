@@ -234,12 +234,6 @@ def _df_stats(
 
     # 2. Определяем ценовые колонки
     if price_cols is None:
-        canonical_names = {
-            "open", "high", "low", "close", "adj close",
-            "adjclose", "adj_close",
-            "open_price", "high_price", "low_price", "close_price",
-            "adj_close_price"
-        }
         price_cols = _get_price_columns(frame)
 
     # 3. Считаем «нулевые» строки
