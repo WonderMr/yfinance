@@ -261,33 +261,33 @@ def download(tickers, start=None, end=None, actions=False, threads=True,
 
     try:
         # ───────────────────────────────
-        # 1. ЛОГИ ДО СКЛЕЙКИ
+        # 1. Logging before concat
         # ───────────────────────────────
-        with shared._DFS_LOCK:                                   # уже держим тот же замок, что и concat
-            for tkr, df_single in shared._DFS.items():           # проходимся по всем сохранённым DataFrame-ам
+        with shared._DFS_LOCK:                                   # already hold same lock as concat
+            for tkr, df_single in shared._DFS.items():           # iterate over all saved DataFrames
                 if df_single is not None and not df_single.empty:
                     utils._df_stats("BEFORE_CONCAT", df_single, tkr)
                 else:
                     utils.get_yf_logger().debug(f"{tkr}: BEFORE_CONCAT: df EMPTY")
 
         # ───────────────────────────────
-        # 2. САМ _pd.concat(...)
+        # 2. _pd.concat(...)
         # ───────────────────────────────
         data = _pd.concat(
-            shared._DFS.values(),            # все df-ы
-            axis=1,                          # склеиваем по столбцам
+            shared._DFS.values(),            # all DataFrames
+            axis=1,                          # concatenate by columns
             sort=True,
-            keys=shared._DFS.keys(),         # первый уровень MultiIndex = тикер
+            keys=shared._DFS.keys(),         # top level of MultiIndex = ticker
             names=['Ticker', 'Price']
         )
 
         # ───────────────────────────────
-        # 3. ЛОГИ ПОСЛЕ СКЛЕЙКИ
+        # 3. Logging after concat
         # ───────────────────────────────
-        # data теперь имеет колонки MultiIndex (Ticker → Price-поля).
-        for tkr in data.columns.levels[0]:                       # первый уровень = список тикеров
-            df_slice = data[tkr]                                 # срез по тикеру («под-DataFrame»)
-            # df_slice всё ещё DataFrame: столбцы Open/High/Low/Close/...
+        # data now has MultiIndex columns (Ticker → Price fields).
+        for tkr in data.columns.levels[0]:                       # top level is list of tickers
+            df_slice = data[tkr]                                 # ticker slice ("sub-DataFrame")
+            # df_slice is still a DataFrame: columns Open/High/Low/Close/...
             utils._df_stats("AFTER_CONCAT", df_slice, tkr)
 
     except Exception:
