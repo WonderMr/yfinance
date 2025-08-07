@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import time as _time
 import warnings
-import requests
 
 from yfinance import shared, utils
 from yfinance.const import _BASE_URL_, _PRICE_COLNAMES_, _SENTINEL_
