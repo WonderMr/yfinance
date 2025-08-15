@@ -29,6 +29,17 @@ https://ranaroussi.github.io/yfinance/development/running.html
 
 https://ranaroussi.github.io/yfinance/development/code.html
 
+## Code Quality
+
+We use pre-commit hooks to ensure code quality. To set them up:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+This will automatically run Black, isort, flake8, and other checks before each commit.
+
 ## Documentation website
 
 The new docs website is generated automatically from code. https://ranaroussi.github.io/yfinance/index.html
