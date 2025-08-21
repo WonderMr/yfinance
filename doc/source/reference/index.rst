@@ -41,7 +41,6 @@ The following are the publicly available classes, and functions exposed by the `
    yfinance.calendars
    yfinance.financials
    yfinance.analysis
-   yfinance.market
    yfinance.search
    yfinance.lookup
    yfinance.websocket
