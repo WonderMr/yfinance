@@ -1,20 +1,16 @@
 import curl_cffi
 import pandas as pd
-import warnings
 
 from yfinance import utils
-from yfinance.const import quote_summary_valid_modules, _SENTINEL_
+from yfinance.config import YfConfig
+from yfinance.const import quote_summary_valid_modules
 from yfinance.data import YfData
 from yfinance.exceptions import YFException
 from yfinance.scrapers.quote import _QUOTE_SUMMARY_URL_
 
 class Analysis:
 
-    def __init__(self, data: YfData, symbol: str, proxy=_SENTINEL_):
-        if proxy is not _SENTINEL_:
-            warnings.warn("Set proxy via new config function: yf.set_config(proxy=proxy)", DeprecationWarning, stacklevel=2)
-            data._set_proxy(proxy)
-
+    def __init__(self, data: YfData, symbol: str):
         self._data = data
         self._symbol = symbol
 
@@ -84,6 +80,8 @@ class Analysis:
             data = self._fetch(['financialData'])
             data = data['quoteSummary']['result'][0]['financialData']
         except (TypeError, KeyError):
+            if not YfConfig.debug.hide_exceptions:
+                raise
             self._analyst_price_targets = {}
             return self._analyst_price_targets
 
@@ -107,6 +105,8 @@ class Analysis:
             data = self._fetch(['earningsHistory'])
             data = data['quoteSummary']['result'][0]['earningsHistory']['history']
         except (TypeError, KeyError):
+            if not YfConfig.debug.hide_exceptions:
+                raise
             self._earnings_history = pd.DataFrame()
             return self._earnings_history
 
@@ -143,6 +143,8 @@ class Analysis:
             trends = self._fetch(['industryTrend', 'sectorTrend', 'indexTrend'])
             trends = trends['quoteSummary']['result'][0]
         except (TypeError, KeyError):
+            if not YfConfig.debug.hide_exceptions:
+                raise
             self._growth_estimates = pd.DataFrame()
             return self._growth_estimates
 
@@ -171,23 +173,18 @@ class Analysis:
     # modified version from quote.py
     def _fetch(self, modules: list):
         if not isinstance(modules, list):
-            raise YFException(
-                "Should provide a list of modules, see available modules using `valid_modules`. "
-                f"Received {modules!r} of type {type(modules).__name__}"
-            )
+            raise YFException("Should provide a list of modules, see available modules using `valid_modules`")
 
-        original_modules = modules
         modules = ','.join([m for m in modules if m in quote_summary_valid_modules])
         if len(modules) == 0:
-            raise YFException(
-                "No valid modules provided, see available modules using `valid_modules`. "
-                f"Requested modules: {original_modules}"
-            )
+            raise YFException("No valid modules provided, see available modules using `valid_modules`")
         params_dict = {"modules": modules, "corsDomain": "finance.yahoo.com", "formatted": "false", "symbol": self._symbol}
         try:
             result = self._data.get_raw_json(_QUOTE_SUMMARY_URL_ + f"/{self._symbol}", params=params_dict)
         except curl_cffi.requests.exceptions.HTTPError as e:
-            utils.get_yf_logger().error(str(e))
+            if not YfConfig.debug.hide_exceptions:
+                raise
+            utils.get_yf_logger().error(str(e) + e.response.text)
             return None
         return result
 
@@ -196,4 +193,6 @@ class Analysis:
             data = self._fetch(['earningsTrend'])
             self._earnings_trend = data['quoteSummary']['result'][0]['earningsTrend']['trend']
         except (TypeError, KeyError):
+            if not YfConfig.debug.hide_exceptions:
+                raise
             self._earnings_trend = []
