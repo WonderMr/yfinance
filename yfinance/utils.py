@@ -527,7 +527,7 @@ def snake_case_2_camelCase(s):
     return sc
 
 
-def _parse_user_dt(dt, exchange_tz):
+def _parse_user_dt(dt, exchange_tz=_tz.utc):
     if isinstance(dt, int):
         # Should already be epoch, test with conversion:
         dt = (

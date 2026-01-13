@@ -1,23 +1,32 @@
 import functools
 from functools import lru_cache
+import socket
+import time as _time
 
 from curl_cffi import requests
+from urllib.parse import urlsplit, urljoin
 from bs4 import BeautifulSoup
 import datetime
 
 from frozendict import frozendict
 
 from . import utils, cache
+from .config import YfConfig
 import threading
 
-from .exceptions import (
-    YFRateLimitError,
-    YFDataException,
-    YFHTTPError,
-    YFTimeoutError,
-    YFConnectionError,
-    YFRequestError,
-)
+from .exceptions import YFException, YFDataException, YFRateLimitError
+
+
+def _is_transient_error(exception):
+    """Check if error is transient (network/timeout) and should be retried."""
+    if isinstance(exception, (TimeoutError, socket.error, OSError)):
+        return True
+    error_type_name = type(exception).__name__
+    transient_error_types = {
+        'Timeout', 'TimeoutError', 'ConnectionError', 'ConnectTimeout',
+        'ReadTimeout', 'ChunkedEncodingError', 'RemoteDisconnected',
+    }
+    return error_type_name in transient_error_types
 
 cache_maxsize = 64
 
@@ -60,9 +69,6 @@ class SingletonMeta(type):
                 if 'session' in kwargs or (args and len(args) > 0):
                     session = kwargs.get('session') if 'session' in kwargs else args[0]
                     cls._instances[cls]._set_session(session)
-                if 'proxy' in kwargs or (args and len(args) > 1):
-                    proxy = kwargs.get('proxy') if 'proxy' in kwargs else args[1]
-                    cls._instances[cls]._set_proxy(proxy)
             return cls._instances[cls]
 
 
@@ -72,7 +78,7 @@ class YfData(metaclass=SingletonMeta):
     Singleton means one session one cookie shared by all threads.
     """
 
-    def __init__(self, session=None, proxy=None):
+    def __init__(self, session=None):
         self._crumb = None
         self._cookie = None
 
@@ -83,9 +89,8 @@ class YfData(metaclass=SingletonMeta):
 
         self._cookie_lock = threading.Lock()
 
-        self._session, self._proxy = None, None
+        self._session = None
         self._set_session(session or requests.Session(impersonate="chrome"))
-        self._set_proxy(proxy)
 
     def _set_session(self, session):
         if session is None:
@@ -109,17 +114,8 @@ class YfData(metaclass=SingletonMeta):
 
         with self._cookie_lock:
             self._session = session
-            if self._proxy is not None:
-                self._session.proxies = self._proxy
-
-    def _set_proxy(self, proxy=None):
-        with self._cookie_lock:
-            if proxy is not None:
-                proxy = {'http': proxy, 'https': proxy} if isinstance(proxy, str) else proxy
-            else:
-                proxy = {}
-            self._proxy = proxy
-            self._session.proxies = proxy
+            if YfConfig.network.proxy is not None:
+                self._session.proxies = YfConfig.network.proxy
 
     def _set_cookie_strategy(self, strategy, have_lock=False):
         if strategy == self._cookie_strategy:
@@ -204,8 +200,10 @@ class YfData(metaclass=SingletonMeta):
                 url='https://fc.yahoo.com',
                 timeout=timeout,
                 allow_redirects=True)
-        except requests.exceptions.DNSError:
-            # Possible because url on some privacy/ad blocklists
+        except requests.exceptions.DNSError as e:
+            # Possible because url on some privacy/ad blocklists.
+            # Can ignore because have second strategy.
+            utils.get_yf_logger().debug("Handling DNS error on cookie fetch: " + str(e))
             return False
         self._save_cookie_curlCffi()
         return True
@@ -374,7 +372,17 @@ class YfData(metaclass=SingletonMeta):
 
     @utils.log_indent_decorator
     def get(self, url, params=None, timeout=30):
-        return self._make_request(url, request_method = self._session.get, params=params, timeout=timeout)
+        response = self._make_request(url, request_method = self._session.get, params=params, timeout=timeout)
+
+        # Accept cookie-consent if redirected to consent page
+        if not self._is_this_consent_url(response.url):
+            # "Consent Page not detected"
+            pass
+        else:
+            # "Consent Page detected"
+            response = self._accept_consent_form(response, timeout)
+
+        return response
 
     @utils.log_indent_decorator
     def post(self, url, body, params=None, timeout=30):
@@ -390,10 +398,13 @@ class YfData(metaclass=SingletonMeta):
             utils.get_yf_logger().debug(f'url={url}')
         utils.get_yf_logger().debug(f'params={params}')
 
+        # sync with config
+        self._session.proxies = YfConfig.network.proxy
+
         if params is None:
             params = {}
         if 'crumb' in params:
-            raise Exception("Don't manually add 'crumb' to params dict, let data.py handle it")
+            raise YFException("Don't manually add 'crumb' to params dict, let data.py handle it")
 
         crumb, strategy = self._get_cookie_and_crumb()
         if crumb is not None:
@@ -410,19 +421,15 @@ class YfData(metaclass=SingletonMeta):
         if body:
             request_args['json'] = body
 
-        try:
-            response = request_method(**request_args)
-        except requests.exceptions.Timeout as e:
-            raise YFTimeoutError(url, timeout, e) from e
-        except requests.exceptions.ConnectionError as e:
-            raise YFConnectionError(url, e) from e
-        except requests.exceptions.HTTPError as e:
-            status_code = e.response.status_code if e.response else "unknown"
-            text = e.response.text if e.response else ""
-            raise YFHTTPError(url, status_code, text) from e
-        except requests.exceptions.RequestException as e:
-            raise YFRequestError(url, "Unexpected request exception", e) from e
-
+        for attempt in range(YfConfig.network.retries + 1):
+            try:
+                response = request_method(**request_args)
+                break
+            except Exception as e:
+                if _is_transient_error(e) and attempt < YfConfig.network.retries:
+                    _time.sleep(2 ** attempt)
+                else:
+                    raise
         utils.get_yf_logger().debug(f'response code={response.status_code}')
         if response.status_code >= 400:
             # Retry with other cookie strategy
@@ -438,8 +445,6 @@ class YfData(metaclass=SingletonMeta):
             # Raise exception if rate limited
             if response.status_code == 429:
                 raise YFRateLimitError()
-            elif response.status_code >= 400:
-                raise YFHTTPError(url, response.status_code, response.text)
 
         return response
 
@@ -451,11 +456,85 @@ class YfData(metaclass=SingletonMeta):
     def get_raw_json(self, url, params=None, timeout=30):
         utils.get_yf_logger().debug(f'get_raw_json(): {url}')
         response = self.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+
+    def _is_this_consent_url(self, response_url: str) -> bool:
+        """
+        Check if given response_url is consent page
+
+        Args:
+            response_url (str) : response.url
+    
+        Returns:
+            True : This is cookie-consent page
+            False : This is not cookie-consent page
+        """
         try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as e:
-            raise YFHTTPError(response.url, response.status_code, response.text) from e
-        try:
-            return response.json()
-        except ValueError as e:
-            raise YFDataException(f"Failed to parse json response from Yahoo Finance: {response.text}") from e
+            return urlsplit(response_url).hostname and urlsplit(
+                response_url
+            ).hostname.endswith("consent.yahoo.com")
+        except Exception:
+            return False
+
+    def _accept_consent_form(
+        self, consent_resp: requests.Response, timeout: int
+    ) -> requests.Response:
+        """
+        Click 'Accept all' to cookie-consent form and return response object.
+
+        Args:
+            consent_resp (requests.Response) : Response instance of cookie-consent page
+            timeout (int) : Raise TimeoutError if post doesn't respond
+    
+        Returns:
+            response (requests.Response) : Reponse instance received from the server after accepting cookie-consent post.
+        """
+        soup = BeautifulSoup(consent_resp.text, "html.parser")
+    
+        # Heuristic: pick the first form; Yahoo's CMP tends to have a single form for consent
+        form = soup.find("form")
+        if not form:
+            return consent_resp
+    
+        # action : URL to send "Accept Cookies"
+        action = form.get("action") or consent_resp.url
+        action = urljoin(consent_resp.url, action)
+    
+        # Collect inputs (hidden tokens, etc.)
+        """
+        <input name="csrfToken" type="hidden" value="..."/>
+        <input name="sessionId" type="hidden" value="..."/>
+        <input name="originalDoneUrl" type="hidden" value="..."/>
+        <input name="namespace" type="hidden" value="yahoo"/>
+        """
+        data = {}
+        for inp in form.find_all("input"):
+            name = inp.get("name")
+            if not name:
+                continue
+            typ = (inp.get("type") or "text").lower()
+            val = inp.get("value") or ""
+    
+            if typ in ("checkbox", "radio"):
+                # If it's clearly an "agree"/"accept" field or already checked, include it
+                if (
+                    "agree" in name.lower()
+                    or "accept" in name.lower()
+                    or inp.has_attr("checked")
+                ):
+                    data[name] = val if val != "" else "1"
+            else:
+                data[name] = val
+    
+        # If no explicit agree/accept in inputs, add a best-effort flag
+        lowered = {k.lower() for k in data.keys()}
+        if not any(("agree" in k or "accept" in k) for k in lowered):
+            data["agree"] = "1"
+    
+        # Submit the form with "Referer". Some servers check this header as a simple CSRF protection measure.
+        headers = {"Referer": consent_resp.url}
+        response = self._session.post(
+            action, data=data, headers=headers, timeout=timeout, allow_redirects=True
+        )
+        return response
