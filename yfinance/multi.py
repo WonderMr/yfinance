@@ -34,6 +34,7 @@ from curl_cffi import requests
 from . import Ticker, shared, utils
 from .const import _SENTINEL_
 from .data import YfData
+from .config import YfConfig
 
 
 @utils.log_indent_decorator
@@ -132,6 +133,7 @@ def download(
         )
         auto_adjust = True
 
+    YfData(session=session)
     if logger.isEnabledFor(logging.DEBUG):
         if threads:
             # With DEBUG, each thread generates a lot of log messages.

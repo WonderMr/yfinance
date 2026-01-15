@@ -1061,7 +1061,6 @@ class TestTickerInfo(unittest.TestCase):
         self.assertCountEqual(['quoteType', 'symbol', 'underlyingSymbol', 'uuid', 'maxAge', 'trailingPegRatio'], data.keys())
         self.assertIn("trailingPegRatio", data.keys(), "Did not find expected key 'trailingPegRatio' in info dict")
 
-
     # def test_fast_info_matches_info(self):
     #     fast_info_keys = set()
     #     for ticker in self.tickers:
