@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from yfinance.screener.screener import screen
+from yfinance.data import YfData
 from yfinance.screener.query import EquityQuery
 
 
@@ -27,6 +28,7 @@ class TestScreener(unittest.TestCase):
 
     @patch('yfinance.data.YfData.get')
     def test_fetch_predefined(self, mock_get):
+        YfData._instances = {}
         mock_response = MagicMock()
         mock_response.json.return_value = {'finance': {'result': [{'key': 'value'}]}}
         mock_get.return_value = mock_response

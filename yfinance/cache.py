@@ -5,6 +5,7 @@ import platformdirs as _ad
 import atexit as _atexit
 import datetime as _dt
 import pickle as _pkl
+import time as _time
 
 from .utils import get_yf_logger
 
@@ -84,8 +85,13 @@ class _TzDBManager:
             raise _TzCacheException(f"Cannot read and write in TzCache folder: '{cls._cache_dir}'")
 
         cls._db = _peewee.SqliteDatabase(
-            _os.path.join(cls._cache_dir, 'tkr-tz.db'),
-            pragmas={'journal_mode': 'wal', 'cache_size': -64}
+            _os.path.join(cls._cache_dir, "tkr-tz.db"),
+            pragmas={
+                "journal_mode": "wal",
+                "cache_size": -64,
+                "busy_timeout": 5000,
+            },
+            timeout=5,
         )
 
         old_cache_file_path = _os.path.join(cls._cache_dir, "tkr-tz.csv")
@@ -215,20 +221,33 @@ class _TzCache:
         if db is None:
             return
 
-        with db.atomic():
-            if value is None:
-                _TZ_KV.delete().where(_TZ_KV.key == key).execute()
+        for attempt in range(3):
+            try:
+                with db.atomic():
+                    if value is None:
+                        _TZ_KV.delete().where(_TZ_KV.key == key).execute()
+                        return
+
+                    old_value = self.lookup(key)
+                    if old_value != value:
+                        get_yf_logger().debug(
+                            f"Value for key {key} changed from {old_value} to {value}."
+                        )
+
+                    _TZ_KV.insert(
+                        key=key,
+                        value=value,
+                        updated_at=_dt.datetime.now(),
+                    ).on_conflict_replace().execute()
                 return
-
-            old_value = self.lookup(key)
-            if old_value != value:
-                get_yf_logger().debug(f"Value for key {key} changed from {old_value} to {value}.")
-
-            _TZ_KV.insert(
-                key=key,
-                value=value,
-                updated_at=_dt.datetime.now(),
-            ).on_conflict_replace().execute()
+            except _peewee.OperationalError as err:
+                if "database is locked" not in str(err).lower() or attempt == 2:
+                    get_yf_logger().info(
+                        f"Failed to store TzCache for key {key}: {err}. "
+                        "TzCache will continue without storing."
+                    )
+                    return
+                _time.sleep(0.1)
 
     def _start_cleanup(self):
         if self._cleanup_started:
@@ -673,6 +692,14 @@ def set_cache_location(cache_dir: str):
     :param cache_dir: Path to use for caches
     :return: None
     """
+    _TzDBManager.close_db()
+    _CookieDBManager.close_db()
+    _ISINDBManager.close_db()
+
+    _TzCacheManager._tz_cache = None
+    _CookieCacheManager._Cookie_cache = None
+    _ISINCacheManager._isin_cache = None
+
     _TzDBManager.set_location(cache_dir)
     _CookieDBManager.set_location(cache_dir)
     _ISINDBManager.set_location(cache_dir)

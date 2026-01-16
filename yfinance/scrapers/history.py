@@ -180,6 +180,7 @@ class PriceHistory:
         if start:
             start_dt = utils._parse_user_dt(start, tz)
             start = int(start_dt.timestamp())
+        end_dt = None
         if end:
             end_dt = utils._parse_user_dt(end, tz)
             end = int(end_dt.timestamp())
@@ -241,6 +242,9 @@ class PriceHistory:
             if k in params_pretty:
                 params_pretty[k] = str(pd.Timestamp(params[k], unit='s').tz_localize("UTC").tz_convert(tz))
         logger.debug(f'{self.ticker}: Yahoo GET parameters: {str(params_pretty)}')
+
+        if end is not None and end_dt is None:
+            end_dt = pd.Timestamp(end, unit="s").tz_localize("UTC")
 
         # Getting data from json
         data = self._fetch_data(params, timeout, _no_cache)
@@ -311,8 +315,8 @@ class PriceHistory:
         # Select useful info from metadata
         quote_type = self._history_metadata["instrumentType"]
         expect_capital_gains = quote_type in ('MUTUALFUND', 'ETF')
-        tz_exchange = self._history_metadata["exchangeTimezoneName"]
-        currency = self._history_metadata["currency"]
+        tz_exchange = self._history_metadata.get("exchangeTimezoneName")
+        currency = self._history_metadata.get("currency")
 
         # Process custom periods
         if period and period not in self._history_metadata.get("validRanges", []):
@@ -326,7 +330,7 @@ class PriceHistory:
         quotes = utils.parse_quotes(data["chart"]["result"][0])
         # Yahoo bug fix - it often appends latest price even if after end date
         if end and not quotes.empty:
-            if quotes.index[-1] >= end_dt.tz_convert('UTC').tz_localize(None):
+            if end_dt is not None and quotes.index[-1] >= end_dt.tz_convert('UTC').tz_localize(None):
                 quotes = quotes.drop(quotes.index[-1])
         if quotes.empty:
             msg = f'{self.ticker}: yfinance received OHLC data: EMPTY'
@@ -456,7 +460,14 @@ class PriceHistory:
             msg = f'{self.ticker}: OHLC after combining events: {df.index[0]} -> {df.index[-1]}'
         logger.debug(msg)
 
-        df, last_trade = utils.fix_Yahoo_returning_live_separate(df, params["interval"], tz_exchange, prepost, repair=repair, currency=currency)
+        df, last_trade = utils.fix_Yahoo_returning_live_separate(
+            df,
+            params["interval"],
+            tz_exchange,
+            prepost,
+            repair=repair,
+            currency=currency,
+        )
         if last_trade is not None:
             self._history_metadata['lastTrade'] = {'Price':last_trade['Close'], "Time":last_trade.name}
 
@@ -472,7 +483,8 @@ class PriceHistory:
             # First make currency consistent. On some exchanges, dividends often in different currency
             # to prices, e.g. £ vs pence.
             df, currency = self._standardise_currency(df, currency)
-            self._history_metadata['currency'] = currency
+            if currency is not None:
+                self._history_metadata["currency"] = currency
 
             df = self._fix_bad_div_adjust(df, interval, currency)
 
@@ -1070,7 +1082,7 @@ class PriceHistory:
         return df_v2
 
     def _standardise_currency(self, df, currency):
-        if currency not in ["GBp", "ZAc", "ILA"]:
+        if currency is None or currency not in ["GBp", "ZAc", "ILA"]:
             return df, currency
         currency2 = currency
         if currency == 'GBp':
@@ -1338,7 +1350,7 @@ class PriceHistory:
         # This function fixes the second.
         # Eventually Yahoo fixes but could take them 2 weeks.
 
-        if self._history_metadata['currency'] == 'KWF':
+        if self._history_metadata.get("currency") == "KWF":
             # Kuwaiti Dinar divided into 1000 not 100
             n = 1000
         else:
@@ -1499,7 +1511,7 @@ class PriceHistory:
             logger.debug('No dividends to check', extra=log_extras)
             return df
 
-        if self._history_metadata['currency'] == 'KWF':
+        if self._history_metadata.get("currency") == "KWF":
             # Kuwaiti Dinar divided into 1000 not 100
             currency_divide = 1000
         else:

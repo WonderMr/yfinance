@@ -1,0 +1,101 @@
+## Upstream Divergence Changelog
+
+Base: `upstream/main`
+Head: `HEAD`
+Ahead/Behind: `93/0`
+Generated: 2026-01-15
+
+### Commit History (Oldest -> Newest)
+- 6fdfd23 2025-08-03 Replace multitasking with ThreadPoolExecutor
+- 44301b5 2025-08-03 Merge pull request #1 from WonderMr/codex/refactor-yfinance/multi.py-to-use-threadpoolexecutor
+- 385149b 2025-08-03 refactor utils.attributes to skip callable and property
+- 5fd5ee4 2025-08-03 Merge pull request #2 from WonderMr/codex/update-attributes-function-in-utils.py
+- e86a326 2025-08-03 refactor timezone fetch counter
+- fede177 2025-08-03 Merge pull request #3 from WonderMr/codex/remove-global-variable-in-base.py
+- bb747c8 2025-08-03 Handle specific decode errors
+- cf7f3c7 2025-08-03 Merge pull request #4 from WonderMr/codex/catch-specific-exceptions-in-_decode_message
+- 42c461a 2025-08-03 Add subscription check in periodic heartbeat
+- 7cc5c6f 2025-08-03 Merge pull request #5 from WonderMr/codex/-_periodic_subscribe
+- c9c0e43 2025-08-03 Fix proxy initialization order in Ticker
+- 5280a9f 2025-08-03 Use dict.fromkeys to preserve ticker order
+- f55b9c4 2025-08-03 Add thread locks to shared structures
+- 729efee 2025-08-03 Merge pull request #8 from WonderMr/codex/add-threading.lock-to-shared.py
+- da89b32 2025-08-03 Merge pull request #7 from WonderMr/codex/replace-set-with-dict.fromkeys-in-multi.py
+- 49d2807 2025-08-03 Merge pull request #6 from WonderMr/codex/refactor-ticker.__init__-method-for-proxy-setup
+- 0f66f3c 2025-08-03 Narrow exception handling in _fetch_ticker_tz
+- fc85dee 2025-08-03 Use on_conflict_replace for tz cache store
+- 05ef9d1 2025-08-03 Merge pull request #9 from WonderMr/codex/update-_fetch_ticker_tz-exception-handling
+- 32637b3 2025-08-03 Use alias for regex module
+- 80c4021 2025-08-03 Merge pull request #10 from WonderMr/codex/refactor-insert/update-to-on_conflict_replace
+- fe28470 2025-08-03 Merge pull request #11 from WonderMr/codex/refactor-yfinance-utils-to-use-_re
+- f13c1d1 2025-08-04 Improve timezone handling and use Timestamp.now
+- e64a279 2025-08-04 Merge pull request #12 from WonderMr/codex/review-code-for-timezone-handling
+- 5abfaed 2025-08-04 Add expiry tracking and cleanup for timezone cache
+- 40f7197 2025-08-04 Add Pydantic chart response models and tests
+- f7bf7f5 2025-08-04 Merge pull request #13 from WonderMr/codex/add-updated_at-field-and-cleanup-process
+- 693520d 2025-08-04 Merge pull request #14 from WonderMr/codex/define-pydantic-models-for-/v8/finance/chart
+- 5d8863e 2025-08-04 Fix timezone cache migration
+- af62627 2025-08-04 Merge pull request #15 from WonderMr/codex/fix-no-such-column-error
+- 8386d42 2025-08-04 feat: enhance error reporting
+- de9692d 2025-08-04 Merge pull request #16 from WonderMr/codex/improve-error-handling-with-detailed-messages
+- d1c67f3 2025-08-05 warn about empty rows when keeping NA
+- be72b2d 2025-08-05 Merge pull request #17 from WonderMr/codex/add-warning-for-missing-rows-in-history
+- 3e738d9 2025-08-05 log blank ohlc timestamps in parse_quotes
+- 0a4376c 2025-08-05 Merge pull request #18 from WonderMr/codex/add-logging-for-missing-ohlc-data
+- 58ebf78 2025-08-05 Retry history fetch if cache returns empty data
+- a1eba86 2025-08-05 Merge pull request #19 from WonderMr/codex/refactor-history.py-to-handle-empty-data
+- 84bfd7f 2025-08-05 Add test for history retry
+- fea5f7e 2025-08-05 Merge pull request #20 from WonderMr/codex/fix-data-retrieval-from-yahoo-finance
+- cf0a75f 2025-08-05 Retry history fetch until values returned
+- 5ff8fd8 2025-08-05 Merge pull request #21 from WonderMr/codex/retry-fetching-historical-prices-until-complete
+- 8e616e2 2025-08-05 feat: limit history retry attempts
+- 012588a 2025-08-05 Merge pull request #22 from WonderMr/r7vohh-codex
+- 6d6bf6d 2025-08-05 Handle NaN blocks in price history
+- 29b6445 2025-08-05 Merge pull request #23 from WonderMr/codex/add-nan-sequence-check-and-refetch-logic
+- 7fa5e42 2025-08-05 feat: retry yearly history fetch
+- 207b6bb 2025-08-05 Merge pull request #24 from WonderMr/codex/fix-price-history-loading-for-empty-values
+- ee6939c 2025-08-05 Simplify missing data refetch logic
+- a35e623 2025-08-05 Merge pull request #25 from WonderMr/codex/refactor-logic-for-fetching-missing-data-blocks
+- 47a99e8 2025-08-06 Improve request error handling in price history
+- ef93bd7 2025-08-06 Handle timezone cache database failures
+- 04f0fa6 2025-08-06 Merge pull request #26 from WonderMr/codex/improve-error-handling-in-yfinance
+- 7d837a3 2025-08-07 Adds debug logging and retry mechanism
+- 5c8c26b 2025-08-07 Use curl_cffi requests for history scraper
+- 1159d9f 2025-08-07 Merge pull request #27 from WonderMr/codex/remove-or-rename-import-requests
+- 8b8755c 2025-08-07 Remove unused exceptions import in history scraper
+- 30bee5e 2025-08-07 Merge pull request #28 from WonderMr/codex/remove-unused-import-in-history.py
+- 6ee4c65 2025-08-07 refactor: use _re alias for price regex
+- c96d367 2025-08-07 Merge pull request #29 from WonderMr/codex/remove-standalone-import-re-usage
+- dab03d1 2025-08-07 doc: translate utils comments
+- 9fef564 2025-08-07 Merge pull request #30 from WonderMr/codex/rewrite-docstrings-and-comments-in-utils.py
+- 21842be 2025-08-07 Use List and Optional in utils
+- e95b4e6 2025-08-07 Merge branch 'main' into codex/replace-list-str]-with-list-str]
+- 7fc6c8c 2025-08-07 Merge pull request #31 from WonderMr/codex/replace-list-str]-with-list-str]
+- 1123b19 2025-08-07 refactor: remove unused canonical names set
+- d6d6ed0 2025-08-07 Merge pull request #32 from WonderMr/codex/remove-canonical_names-set-from-_df_stats
+- 01b3b7e 2025-08-07 Translate Russian comments in multi concat
+- 2c45987 2025-08-07 Merge pull request #33 from WonderMr/codex/translate-russian-comments-to-english-in-multi.py
+- 2a2ed5d 2025-08-07 Format history scraper and unify string quotes
+- 166a03d 2025-08-07 Merge pull request #34 from WonderMr/codex/format-history.py-with-black
+- 020f5d2 2025-08-07 Format code with black and isort
+- b139aea 2025-08-07 Merge pull request #35 from WonderMr/codex/run-formatting-and-linting-tools
+- b5a5edc 2025-12-21 Block curl_cffi version 0.14
+- 5e7b1c2 2025-10-24 fix(industry): correct typo in column names
+- c5cfcd5 2025-07-11 Screener: add Swiss exchange
+- 5ae4376 2025-09-17 Screener: EquityQuery add industry field
+- e2f1839 2025-12-21 update Screener's querying logic and sector industry mapping
+- 9c1ecb5 2025-12-20 Redesign YfConfig + small fixes
+- 4cae562 2025-10-24 earning calendar and other calendars
+- 067608d 2026-01-13 Set period default to None in Tickers.history/download (upstream fcb951b)
+- e92386b 2026-01-13 Export config in __all__
+- 469e80c 2025-08-20 Update index.rst - duplicate market reference
+- 89ee447 2025-08-21 Update index.rst
+- 6d1725a 2026-01-05 Fix broken contributing link in PyPI documentation
+- af8168f 2026-01-07 Fix broken LICENSE.txt link in PyPI documentation
+- 4afb7db 2026-01-13 Add upstream sync summary documentation
+- 9b4bdfa 2026-01-13 docs: Add comprehensive upstream sync report
+- bb698bb 2026-01-13 Merge pull request #36 from WonderMr/upstream-sync
+- 1e945fe 2026-01-13 fix: Remove NEPT from tests due to delisting (upstream 9a6c82a)
+- 0929963 2026-01-13 feat: Add market_suffix (MIC to Yahoo suffix mapping)
+- 56c634a 2026-01-15 Ignores cursor directory
+- 1d054f5 2026-01-15 Merge upstream main

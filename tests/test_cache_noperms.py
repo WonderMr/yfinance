@@ -22,7 +22,12 @@ class TestCacheNoPermission(unittest.TestCase):
         else:  # Unix/Linux/MacOS
             # Use a writable directory
             cls.cache_path = "/yf-cache"
+        cls._prev_cache_path = yf.cache._TzDBManager.get_location()
         yf.set_tz_cache_location(cls.cache_path)
+
+    @classmethod
+    def tearDownClass(cls):
+        yf.set_tz_cache_location(cls._prev_cache_path)
 
     def test_tzCacheRootStore(self):
         # Test that if cache path in read-only filesystem, no exception.

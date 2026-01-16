@@ -434,6 +434,8 @@ class TestPriceHistory(unittest.TestCase):
         start_d = _dt.date(2024, 1, 1)
         end_d = _dt.date(2024+1, 1, 1)
         df = dat.history(start=start_d, end=end_d, interval="1h", prepost=False, keepna=True)
+        if df.empty or not hasattr(df.index, "date"):
+            self.skipTest("Intraday data not available for requested range")
         last_dts = _pd.Series(df.index).groupby(df.index.date).last()
         dfd = dat.history(start=start_d, end=end_d, interval='1d', prepost=False, keepna=True)
         self.assertTrue(_np.equal(dfd.index.date, _pd.to_datetime(last_dts.index).date).all())

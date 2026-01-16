@@ -13,10 +13,11 @@ test.ipynb
 
 # Environments
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/
+.cursor/
 
 # Documentation
 /doc/build/
@@ -24,4 +25,3 @@ ENV/
 /doc/source/reference/api
 !yfinance.css
 !/doc/source/development/assets/branches.png
-.cursor/

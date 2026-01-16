@@ -199,8 +199,6 @@ class TickerBase:
             logger.debug("-------------")
             logger.debug(f" {data}")
             logger.debug("-------------")
-            if not YfConfig.debug.hide_exceptions:
-                raise
             return None
         except (requests.exceptions.RequestException, ValueError) as err:
             if not YfConfig.debug.hide_exceptions:

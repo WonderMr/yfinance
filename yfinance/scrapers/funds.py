@@ -184,15 +184,19 @@ class FundsData:
             data = result["quoteSummary"]["result"][0]
             # check quote type
             self._quote_type = data["quoteType"]["quoteType"]
-            
+            if self._quote_type not in ("MUTUALFUND", "ETF"):
+                raise YFDataException(f"{self._symbol}: No Fund data found.")
+
             # parse "summaryProfile", "topHoldings", "fundProfile"
-            self._parse_description(data["summaryProfile"])
-            self._parse_top_holdings(data["topHoldings"])
-            self._parse_fund_profile(data["fundProfile"])
+            self._parse_description(data.get("summaryProfile", {}))
+            self._parse_top_holdings(data.get("topHoldings", {}))
+            self._parse_fund_profile(data.get("fundProfile", {}))
         except KeyError:
             if not YfConfig.debug.hide_exceptions:
                 raise
             raise YFDataException(f"{self._symbol}: No Fund data found.")
+        except YFDataException:
+            raise
         except Exception as e:
             if not YfConfig.debug.hide_exceptions:
                 raise

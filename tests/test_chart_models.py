@@ -44,9 +44,13 @@ class TestChartModels(unittest.TestCase):
         ticker = yf.Ticker("FAKE")
         mock_resp = Mock()
         mock_resp.json.return_value = SAMPLE_CHART_RESPONSE
+        original_cache_get = ticker._data.cache_get
         ticker._data.cache_get = Mock(return_value=mock_resp)
-        tz = ticker._fetch_ticker_tz(timeout=5)
-        self.assertEqual(tz, "America/New_York")
+        try:
+            tz = ticker._fetch_ticker_tz(timeout=5)
+            self.assertEqual(tz, "America/New_York")
+        finally:
+            ticker._data.cache_get = original_cache_get
 
     def test_model_validation_error(self):
         bad_data = {"chart": {"result": [{}], "error": None}}

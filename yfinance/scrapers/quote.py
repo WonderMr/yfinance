@@ -613,8 +613,10 @@ class Quote:
         additional_info = self._fetch_additional_info()
         if additional_info is not None and result is not None:
             result.update(additional_info)
-        else:
+        elif result is None and additional_info is not None:
             result = additional_info
+        elif result is None:
+            result = {}
 
         query1_info = {}
         for quote in ["quoteSummary", "quoteResponse"]:
