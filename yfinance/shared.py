@@ -31,3 +31,4 @@ _TRACEBACKS = {}
 _TRACEBACKS_LOCK = threading.Lock()
 _ISINS = {}
 _ISINS_LOCK = threading.Lock()
+_LOCK = threading.Lock()
