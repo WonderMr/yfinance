@@ -35,6 +35,7 @@ from . import Ticker, shared, utils
 from .const import _SENTINEL_
 from .data import YfData
 from .config import YfConfig
+from .const import period_default
 
 
 @utils.log_indent_decorator
@@ -68,7 +69,7 @@ def download(
             List of tickers to download
         period : str
             Valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max
-            Default: 1mo
+            Default: '1mo' if start & end None
             Either Use period parameter or use start and end
         interval : str
             Valid intervals: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
@@ -111,6 +112,25 @@ def download(
         multi_level_index: bool
             Optional. Always return a MultiIndex DataFrame? Default is True
     """
+    shared._LOCK.acquire()
+    try:
+        return _download_impl(
+            tickers, start=start, end=end, actions=actions, threads=threads,
+            ignore_tz=ignore_tz, group_by=group_by, auto_adjust=auto_adjust,
+            back_adjust=back_adjust, repair=repair, keepna=keepna, progress=progress,
+            period=period, interval=interval, prepost=prepost, proxy=proxy,
+            rounding=rounding, timeout=timeout, session=session,
+            multi_level_index=multi_level_index, _retry=_retry,
+        )
+    finally:
+        shared._LOCK.release()
+
+
+def _download_impl(tickers, start=None, end=None, actions=False, threads=True,
+                   ignore_tz=None, group_by='column', auto_adjust=None, back_adjust=False,
+                   repair=False, keepna=False, progress=True, period=None, interval="1d",
+                   prepost=False, proxy=_SENTINEL_, rounding=False, timeout=10, session=None,
+                   multi_level_index=True, _retry=True):
     logger = utils.get_yf_logger()
     session = session or requests.Session(impersonate="chrome")
 
