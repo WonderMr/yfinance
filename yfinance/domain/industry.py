@@ -1,13 +1,12 @@
-from __future__ import print_function
+
 
 import pandas as _pd
-from typing import Dict, Optional
 
 from .. import utils
 from ..config import YfConfig
 from ..data import YfData
+from .domain import _QUERY_URL_, Domain
 
-from .domain import Domain, _QUERY_URL_
 
 class Industry(Domain):
     """
@@ -21,7 +20,7 @@ class Industry(Domain):
             session (optional): The session to use for requests.
         """
         YfData(session=session)
-        super(Industry, self).__init__(key, session)
+        super().__init__(key, session)
         self._query_url = f'{_QUERY_URL_}/industries/{self._key}'
 
         self._sector_key = None
@@ -61,7 +60,7 @@ class Industry(Domain):
         return self._sector_name
     
     @property
-    def top_performing_companies(self) -> Optional[_pd.DataFrame]:
+    def top_performing_companies(self) -> _pd.DataFrame | None:
         """
         Returns the top performing companies in the industry.
         
@@ -72,7 +71,7 @@ class Industry(Domain):
         return self._top_performing_companies
     
     @property
-    def top_growth_companies(self) -> Optional[_pd.DataFrame]:
+    def top_growth_companies(self) -> _pd.DataFrame | None:
         """
         Returns the top growth companies in the industry.
         
@@ -82,7 +81,7 @@ class Industry(Domain):
         self._ensure_fetched(self._top_growth_companies)
         return self._top_growth_companies
     
-    def _parse_top_performing_companies(self, top_performing_companies: Dict) -> Optional[_pd.DataFrame]:
+    def _parse_top_performing_companies(self, top_performing_companies: dict) -> _pd.DataFrame | None:
         """
         Parses the top performing companies data.
         
@@ -104,7 +103,7 @@ class Industry(Domain):
 
         return _pd.DataFrame(compnaies_values, columns = compnaies_column).set_index('symbol')
     
-    def _parse_top_growth_companies(self, top_growth_companies: Dict) -> Optional[_pd.DataFrame]:
+    def _parse_top_growth_companies(self, top_growth_companies: dict) -> _pd.DataFrame | None:
         """
         Parses the top growth companies data.
         

@@ -3,8 +3,9 @@ import json as _json
 
 from ..config import YfConfig
 from ..const import _QUERY1_URL_
-from ..data import utils, YfData
+from ..data import YfData, utils
 from ..exceptions import YFDataException
+
 
 class Market:
     def __init__(self, market:'str', session=None, timeout=30):

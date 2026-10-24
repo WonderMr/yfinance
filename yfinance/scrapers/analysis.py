@@ -8,6 +8,7 @@ from yfinance.data import YfData
 from yfinance.exceptions import YFException
 from yfinance.scrapers.quote import _QUOTE_SUMMARY_URL_
 
+
 class Analysis:
 
     def __init__(self, data: YfData, symbol: str):

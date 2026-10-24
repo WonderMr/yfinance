@@ -1,12 +1,13 @@
-import curl_cffi
 import datetime
 import json
+
+import curl_cffi
 import numpy as _np
 import pandas as pd
 
 from yfinance import utils
 from yfinance.config import YfConfig
-from yfinance.const import quote_summary_valid_modules, _BASE_URL_, _QUERY1_URL_
+from yfinance.const import _BASE_URL_, _QUERY1_URL_, quote_summary_valid_modules
 from yfinance.data import YfData
 from yfinance.exceptions import YFDataException, YFException
 
@@ -276,7 +277,7 @@ class FastInfo:
                 self._prev_close = float(prices["Close"].iloc[-2])
         if fail:
             # Fallback to original info[] if available.
-            self._tkr.info  # trigger fetch
+            _ = self._tkr.info  # trigger fetch
             k = "previousClose"
             if self._tkr._quote._retired_info is not None and k in self._tkr._quote._retired_info:
                 self._prev_close = self._tkr._quote._retired_info[k]
@@ -296,7 +297,7 @@ class FastInfo:
             # Very few symbols have regularMarketPreviousClose despite no
             # no trading data. E.g. 'QCSTIX'.
             # So fallback to original info[] if available.
-            self._tkr.info  # trigger fetch
+            _ = self._tkr.info  # trigger fetch
             k = "regularMarketPreviousClose"
             if self._tkr._quote._retired_info is not None and k in self._tkr._quote._retired_info:
                 self._reg_prev_close = self._tkr._quote._retired_info[k]
@@ -363,8 +364,7 @@ class FastInfo:
             n = prices.shape[0]
             a = n-50
             b = n
-            if a < 0:
-                a = 0
+            a = max(a, 0)
             self._50d_day_average = float(prices["Close"].iloc[a:b].mean())
 
         return self._50d_day_average
@@ -381,8 +381,7 @@ class FastInfo:
             n = prices.shape[0]
             a = n-200
             b = n
-            if a < 0:
-                a = 0
+            a = max(a, 0)
 
             self._200d_day_average = float(prices["Close"].iloc[a:b].mean())
 
@@ -400,8 +399,7 @@ class FastInfo:
             n = prices.shape[0]
             a = n-10
             b = n
-            if a < 0:
-                a = 0
+            a = max(a, 0)
             self._10d_avg_vol = int(prices["Volume"].iloc[a:b].mean())
 
         return self._10d_avg_vol
@@ -471,7 +469,7 @@ class FastInfo:
             # Very few symbols have marketCap despite no share count.
             # E.g. 'BTC-USD'
             # So fallback to original info[] if available.
-            self._tkr.info
+            _ = self._tkr.info
             k = "marketCap"
             if self._tkr._quote._retired_info is not None and k in self._tkr._quote._retired_info:
                 self._mcap = self._tkr._quote._retired_info[k]
@@ -727,7 +725,7 @@ class Quote:
             return
 
         try:
-            self._calendar = dict()
+            self._calendar = {}
             _events = result["quoteSummary"]["result"][0]["calendarEvents"]
             if 'dividendDate' in _events:
                 self._calendar['Dividend Date'] = datetime.datetime.fromtimestamp(_events['dividendDate']).date()

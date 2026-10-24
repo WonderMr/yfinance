@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -19,17 +17,15 @@
 # limitations under the License.
 #
 
-from __future__ import print_function
 
 import datetime as _datetime
 import logging
 import re as _re
 import sys as _sys
 import threading
+import warnings
 from functools import wraps
 from inspect import getmembers
-from typing import List, Optional
-import warnings
 
 import numpy as _np
 import pandas as _pd
@@ -39,8 +35,8 @@ from dateutil.relativedelta import relativedelta
 from pytz import UnknownTimeZoneError
 
 from yfinance import const
-from yfinance.exceptions import YFException
 from yfinance.config import YfConfig
+from yfinance.exceptions import YFException
 
 
 # From https://stackoverflow.com/a/59128615
@@ -159,7 +155,6 @@ class YFLogFormatter(logging.Filter):
 
 def get_yf_logger():
     global yf_logger
-    global yf_log_indented
 
     if yf_log_indented and not YfConfig.debug.logging:
         _disable_debug_mode()
@@ -208,10 +203,10 @@ def is_isin(string):
     return bool(_re.match("^([A-Z]{2})([A-Z0-9]{9})([0-9])$", string))
 
 
-_PRICE_RE = _re.compile(r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", _re.I)
+_PRICE_RE = _re.compile(r"^(open|high|low|close|adj[_\s]?close|price|adjclose)$", _re.IGNORECASE)
 
 
-def _get_price_columns(df: _pd.DataFrame) -> List[str]:
+def _get_price_columns(df: _pd.DataFrame) -> list[str]:
     """Return all columns containing price data.
 
     Column names are matched case-insensitively and ignore spaces and
@@ -248,7 +243,7 @@ def _df_stats(
     tag: str,
     frame: _pd.DataFrame,
     ticker: str,  # ticker symbol must be provided explicitly
-    price_cols: Optional[List[str]] = None,
+    price_cols: list[str] | None = None,
 ) -> None:
     """Log index range and statistics for rows containing zero prices.
 
@@ -283,7 +278,8 @@ def _df_stats(
         get_yf_logger().debug(f"{ticker}: {tag}: head(10):\n{preview}")
     except Exception as e:
         # Fall back if printing fails due to unusual column types
-        get_yf_logger().debug(f"{ticker}: {tag}: unable to print head(10): {e}")
+        logger = get_yf_logger()
+        logger.debug(f"{ticker}: {tag}: unable to print head(10): {e}", exc_info=True)
 
 
 def get_all_by_isin(isin):
@@ -486,8 +482,8 @@ def format_quarterly_financial_statement(_statement, level_detail, order):
 
 
 def camel2title(
-    strings: List[str], sep: str = " ", acronyms: Optional[List[str]] = None
-) -> List[str]:
+    strings: list[str], sep: str = " ", acronyms: list[str] | None = None
+) -> list[str]:
     if isinstance(strings, str) or not hasattr(strings, "__iter__"):
         raise TypeError("camel2title() 'strings' argument must be iterable of strings")
     if len(strings) == 0:
@@ -566,7 +562,7 @@ def _parse_user_dt(dt, exchange_tz=_tz.utc):
             else:
                 dt = _pd.Timestamp(dt).tz_convert(exchange_tz)
         else: # if we reached here, then it hasn't been any known type
-            raise ValueError(f"Unable to parse input dt {dt} of type {type(dt)}")
+            raise ValueError(f"Unable to parse input dt {dt} of type {type(dt)}")  # noqa: TRY004 - Preserve the established ValueError API.
     return dt
 
 
@@ -811,11 +807,10 @@ def fix_Yahoo_returning_live_separate(
                     # Yahoo is not returning live data (phew!)
                     return quotes, None
 
-                if prepost:
-                    # Possibly dt1 is just start of post-market
-                    if dt1.second == 0:
-                        # assume post-market interval
-                        return quotes, None
+                # Possibly dt1 is just start of post-market
+                if prepost and dt1.second == 0:
+                    # Assume post-market interval.
+                    return quotes, None
 
                 ss = quotes["Stock Splits"].iloc[-2:].replace(0, 1).prod()
                 if repair:
@@ -883,7 +878,7 @@ def safe_merge_dfs(df_main, df_sub, interval):
     data_col = data_cols[0]
 
     df_main = df_main.sort_index()
-    intraday = interval.endswith("m") or interval.endswith("s")
+    intraday = interval.endswith(("m", "s"))
 
     td = _interval_to_timedelta(interval)
     if intraday:
@@ -1023,7 +1018,7 @@ def safe_merge_dfs(df_main, df_sub, interval):
     return df
 
 
-def fetch_timezone(ticker: str, timeout: int = 10) -> Optional[str]:
+def fetch_timezone(ticker: str, timeout: int = 10) -> str | None:
     """Fetch timezone for *ticker* from Yahoo Finance."""
     url = f"{const._BASE_URL_}/v8/finance/chart/{ticker}"
     params = {"range": "1d", "interval": "1d"}
@@ -1069,9 +1064,8 @@ def format_history_metadata(md, tradingPeriodsOnly=True):
 
     if not tradingPeriodsOnly:
         for k in ["firstTradeDate", "regularMarketTime"]:
-            if k in md and md[k] is not None:
-                if isinstance(md[k], int):
-                    md[k] = _pd.to_datetime(md[k], unit="s", utc=True).tz_convert(tz)
+            if k in md and md[k] is not None and isinstance(md[k], int):
+                md[k] = _pd.to_datetime(md[k], unit="s", utc=True).tz_convert(tz)
 
         if "currentTradingPeriod" in md:
             for m in ["regular", "pre", "post"]:
@@ -1148,12 +1142,11 @@ class ProgressBar:
         self.elapsed = 1
 
     def completed(self):
-        if self.elapsed > self.iterations:
-            self.elapsed = self.iterations
+        self.elapsed = min(self.elapsed, self.iterations)
         self.update_iteration(1)
         print("\r" + str(self), end="", file=_sys.stderr)
         _sys.stderr.flush()
-        print("", file=_sys.stderr)
+        print(file=_sys.stderr)
 
     def animate(self, iteration=None):
         if iteration is None:
@@ -1172,9 +1165,9 @@ class ProgressBar:
         self.prog_bar += f"  {self.elapsed} of {self.iterations} {self.text}"
 
     def __update_amount(self, new_amount):
-        percent_done = int(round((new_amount / 100.0) * 100.0))
+        percent_done = round((new_amount / 100.0) * 100.0)
         all_full = self.width - 2
-        num_hashes = int(round((percent_done / 100.0) * all_full))
+        num_hashes = round((percent_done / 100.0) * all_full)
         self.prog_bar = (
             "[" + self.fill_char * num_hashes + " " * (all_full - num_hashes) + "]"
         )
@@ -1228,7 +1221,7 @@ def _generate_table_configurations(title=None) -> str:
 
 
 def generate_list_table_from_dict(
-    data: dict, bullets: bool = True, title: str = None
+    data: dict, bullets: bool = True, title: str | None = None
 ) -> str:
     """
     Generate a list-table for the docstring showing permitted keys/values.
@@ -1266,14 +1259,15 @@ def generate_list_table_from_dict(
 
 
 def generate_list_table_from_dict_universal(
-    data: dict, bullets: bool = True, title: str = None, concat_keys=[]
+    data: dict, bullets: bool = True, title: str | None = None, concat_keys=None
 ) -> str:
     """
     Generate a list-table for the docstring showing permitted keys/values.
     """
+    if concat_keys is None:
+        concat_keys = []
     table = _generate_table_configurations(title)
-    for k in data.keys():
-        values = data[k]
+    for k, values in data.items():
 
         table += " " * 3 + f"* - {k}\n"
         if isinstance(values, dict):
@@ -1282,7 +1276,7 @@ def generate_list_table_from_dict_universal(
             concat_short_lines = k in concat_keys
 
             if bullets:
-                k_keys = sorted(list(values.keys()))
+                k_keys = sorted(values.keys())
                 current_line = ""
                 block_format = "query" in k_keys
                 for i in range(len(k_keys)):

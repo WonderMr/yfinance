@@ -8,12 +8,12 @@ Specific test class:
    python -m unittest tests.cache.TestCache
 
 """
-from tests.context import yfinance as yf
-
-import unittest
-import tempfile
 import os
 import sqlite3
+import tempfile
+import unittest
+
+from tests.context import yfinance as yf
 
 
 class TestCache(unittest.TestCase):

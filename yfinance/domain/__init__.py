@@ -1,5 +1,5 @@
 # domain/__init__.py
-from .sector import Sector
 from .industry import Industry
+from .sector import Sector
 
-__all__ = ['Sector', 'Industry']
+__all__ = ['Industry', 'Sector']

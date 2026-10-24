@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -19,37 +17,41 @@
 # limitations under the License.
 #
 
-from __future__ import print_function
 
 import json as _json
-import warnings
 import threading
-from typing import Optional, Union
+import warnings as _warnings
+from io import StringIO
 from urllib.parse import quote as urlencode
 
 import numpy as np
 import pandas as pd
+from bs4 import BeautifulSoup
 from curl_cffi import requests
 from pydantic import ValidationError
 
-
-from . import utils, cache
+from . import cache, utils
 from .chart import ChartResponse
-from .const import _BASE_URL_, _ROOT_URL_, _QUERY1_URL_, _SENTINEL_, _MIC_TO_YAHOO_SUFFIX
-from .data import YfData
 from .config import YfConfig
+from .const import (
+    _BASE_URL_,
+    _MIC_TO_YAHOO_SUFFIX,
+    _QUERY1_URL_,
+    _ROOT_URL_,
+    _SENTINEL_,
+)
+from .data import YfData
 from .exceptions import YFDataException, YFEarningsDateMissing, YFRateLimitError
 from .live import WebSocket
 from .scrapers.analysis import Analysis
 from .scrapers.fundamentals import Fundamentals
-from .scrapers.holders import Holders
-from .scrapers.quote import Quote, FastInfo
-from .scrapers.history import PriceHistory
 from .scrapers.funds import FundsData
+from .scrapers.history import PriceHistory
+from .scrapers.holders import Holders
+from .scrapers.quote import FastInfo, Quote
 
-from io import StringIO
-from bs4 import BeautifulSoup
-
+# Compatibility export retained for callers of this module.
+warnings = _warnings
 
 _tz_info_fetch_ctr = 0
 
@@ -73,8 +75,7 @@ class TickerBase:
                 raise ValueError("Ticker tuple must be (symbol, mic_code)")
             base_symbol, mic_code = ticker
             # Convert MIC code to Yahoo suffix
-            if mic_code.startswith('.'):
-                mic_code = mic_code[1:]
+            mic_code = mic_code.removeprefix('.')
             if mic_code.upper() not in _MIC_TO_YAHOO_SUFFIX:
                 raise ValueError(f"Unknown MIC code: '{mic_code}'")
             sfx = _MIC_TO_YAHOO_SUFFIX[mic_code.upper()]
@@ -397,8 +398,7 @@ class TickerBase:
         data = self._fundamentals.earnings[freq]
         if as_dict:
             dict_data = data.to_dict()
-            dict_data['financialCurrency'] = 'USD' if 'financialCurrency' not in self._earnings else self._earnings[
-                'financialCurrency']
+            dict_data['financialCurrency'] = self._earnings.get('financialCurrency', 'USD')
             return dict_data
         return data
 
@@ -458,7 +458,7 @@ class TickerBase:
     def get_balancesheet(self, as_dict=False, pretty=False, freq="yearly"):
         return self.get_balance_sheet(as_dict, pretty, freq)
 
-    def get_cash_flow(self, as_dict=False, pretty=False, freq="yearly") -> Union[pd.DataFrame, dict]:
+    def get_cash_flow(self, as_dict=False, pretty=False, freq="yearly") -> pd.DataFrame | dict:
         """
         :Parameters:
             as_dict: bool
@@ -497,7 +497,7 @@ class TickerBase:
     def get_actions(self, period="max") -> pd.Series:
         return self._lazy_load_price_history().get_actions(period=period)
 
-    def get_shares(self, as_dict=False) -> Union[pd.DataFrame, dict]:
+    def get_shares(self, as_dict=False) -> pd.DataFrame | dict:
         data = self._fundamentals.shares
         if as_dict:
             return data.to_dict()
@@ -561,7 +561,7 @@ class TickerBase:
         df = df.sort_index()
         return df
 
-    def get_isin(self) -> Optional[str]:
+    def get_isin(self) -> str | None:
         # *** experimental ***
         if self._isin is not None:
             return self._isin
@@ -639,7 +639,7 @@ class TickerBase:
         self._news = [article for article in news if not article.get('ad', [])]
         return self._news
 
-    def get_earnings_dates(self, limit = 12, offset = 0) -> Optional[pd.DataFrame]:
+    def get_earnings_dates(self, limit = 12, offset = 0) -> pd.DataFrame | None:
         if limit > 100:
             raise ValueError("Yahoo caps limit at 100")
 
@@ -651,7 +651,7 @@ class TickerBase:
         return df
 
     @utils.log_indent_decorator
-    def _get_earnings_dates_using_scrape(self, limit = 12, offset = 0) -> Optional[pd.DataFrame]:
+    def _get_earnings_dates_using_scrape(self, limit = 12, offset = 0) -> pd.DataFrame | None:
         """
         Uses YfData.cache_get() to scrape earnings data from YahooFinance.
         (https://finance.yahoo.com/calendar/earnings?symbol=INTC)
@@ -692,9 +692,7 @@ class TickerBase:
             raise ValueError("Please use limit <= 100")
     
         # Define the URL
-        url = "https://finance.yahoo.com/calendar/earnings?symbol={}&offset={}&size={}".format(
-            self.ticker, offset, size
-        )
+        url = f"https://finance.yahoo.com/calendar/earnings?symbol={self.ticker}&offset={offset}&size={size}"
         #####################################################
         # Get data
         #####################################################
@@ -746,7 +744,7 @@ class TickerBase:
         return df
 
     @utils.log_indent_decorator
-    def _get_earnings_dates_using_screener(self, limit=12) -> Optional[pd.DataFrame]:
+    def _get_earnings_dates_using_screener(self, limit=12) -> pd.DataFrame | None:
         """
         Get earning dates (future and historic)
 
@@ -818,7 +816,7 @@ class TickerBase:
     def get_history_metadata(self) -> dict:
         return self._lazy_load_price_history().get_history_metadata()
 
-    def get_funds_data(self) -> Optional[FundsData]:
+    def get_funds_data(self) -> FundsData | None:
         if not self._funds_data:
             self._funds_data = FundsData(self._data, self.ticker)
         

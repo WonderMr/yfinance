@@ -1,16 +1,21 @@
-from abc import ABC, abstractmethod
 import numbers
-from typing import List, Union, Dict, TypeVar, Tuple
+from abc import ABC, abstractmethod
+from typing import TypeVar
 
-from yfinance.const import EQUITY_SCREENER_EQ_MAP, EQUITY_SCREENER_FIELDS
-from yfinance.const import FUND_SCREENER_EQ_MAP, FUND_SCREENER_FIELDS
+from yfinance.const import (
+    EQUITY_SCREENER_EQ_MAP,
+    EQUITY_SCREENER_FIELDS,
+    FUND_SCREENER_EQ_MAP,
+    FUND_SCREENER_FIELDS,
+)
 from yfinance.exceptions import YFNotImplementedError
+
 from ..utils import dynamic_docstring, generate_list_table_from_dict_universal
 
-T = TypeVar('T', bound=Union[str, numbers.Real])
+T = TypeVar('T', bound=str | numbers.Real)
 
 class QueryBase(ABC):
-    def __init__(self, operator: str, operand: Union[ List['QueryBase'], Tuple[str, Tuple[Union[str, numbers.Real],  ...]] ]):
+    def __init__(self, operator: str, operand: list['QueryBase'] | tuple[str, tuple[str | numbers.Real, ...]]):
         operator = operator.upper()
 
         if not isinstance(operand, list):
@@ -36,21 +41,21 @@ class QueryBase(ABC):
 
     @property
     @abstractmethod
-    def valid_fields(self) -> List:
+    def valid_fields(self) -> list:
         raise YFNotImplementedError('valid_fields() needs to be implemented by child')
 
     @property
     @abstractmethod
-    def valid_values(self) -> Dict:
+    def valid_values(self) -> dict:
         raise YFNotImplementedError('valid_values() needs to be implemented by child')
 
-    def _validate_or_and_operand(self, operand: List['QueryBase']) -> None:
+    def _validate_or_and_operand(self, operand: list['QueryBase']) -> None:
         if len(operand) <= 1: 
             raise ValueError('Operand must be length longer than 1')
         if all(isinstance(e, QueryBase) for e in operand) is False: 
             raise TypeError(f'Operand must be type {type(self)} for OR/AND')
 
-    def _validate_eq_operand(self, operand: List[Union[str, numbers.Real]]) -> None:
+    def _validate_eq_operand(self, operand: list[str | numbers.Real]) -> None:
         if len(operand) != 2:
             raise ValueError('Operand must be length 2 for EQ')
         
@@ -65,7 +70,7 @@ class QueryBase(ABC):
             if operand[1] not in vv:
                 raise ValueError(f'Invalid EQ value "{operand[1]}"')
     
-    def _validate_btwn_operand(self, operand: List[Union[str, numbers.Real]]) -> None:
+    def _validate_btwn_operand(self, operand: list[str | numbers.Real]) -> None:
         if len(operand) != 3: 
             raise ValueError('Operand must be length 3 for BTWN')
         if  not any(operand[0] in fields_by_type for fields_by_type in self.valid_fields.values()):
@@ -75,7 +80,7 @@ class QueryBase(ABC):
         if isinstance(operand[2], numbers.Real) is False:
             raise TypeError('Invalid comparison type for BTWN')
 
-    def _validate_gt_lt(self, operand: List[Union[str, numbers.Real]]) -> None:
+    def _validate_gt_lt(self, operand: list[str | numbers.Real]) -> None:
         if len(operand) != 2:
             raise ValueError('Operand must be length 2 for GT/LT')
         if  not any(operand[0] in fields_by_type for fields_by_type in self.valid_fields.values()):
@@ -83,7 +88,7 @@ class QueryBase(ABC):
         if isinstance(operand[1], numbers.Real) is False:
             raise TypeError('Invalid comparison type for GT/LT')
 
-    def _validate_isin_operand(self, operand: List['QueryBase']) -> None:
+    def _validate_isin_operand(self, operand: list['QueryBase']) -> None:
         if len(operand) < 2:
             raise ValueError('Operand must be length 2+ for IS-IN')
         
@@ -99,7 +104,7 @@ class QueryBase(ABC):
                 if operand[i] not in vv:
                     raise ValueError(f'Invalid EQ value "{operand[i]}"')
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         op = self.operator
         ops = self.operands
         if self.operator == 'IS-IN':
@@ -126,10 +131,10 @@ class QueryBase(ABC):
                 return f"{class_name}({self.operator}, [\n{operands_str}\n{indent_str}])"
             else:
                 # For lists of simple types, keep them on one line
-                return f"{class_name}({self.operator}, {repr(self.operands)})"
+                return f"{class_name}({self.operator}, {self.operands!r})"
         else:
             # Handle single operand
-            return f"{class_name}({self.operator}, {repr(self.operands)})"
+            return f"{class_name}({self.operator}, {self.operands!r})"
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -158,7 +163,7 @@ class EquityQuery(QueryBase):
 
     @dynamic_docstring({"valid_operand_fields_table": generate_list_table_from_dict_universal(EQUITY_SCREENER_FIELDS)})
     @property
-    def valid_fields(self) -> Dict:
+    def valid_fields(self) -> dict:
         """
         Valid operands, grouped by category.
         {valid_operand_fields_table}
@@ -167,7 +172,7 @@ class EquityQuery(QueryBase):
     
     @dynamic_docstring({"valid_values_table": generate_list_table_from_dict_universal(EQUITY_SCREENER_EQ_MAP, concat_keys=['exchange', 'industry'])})
     @property
-    def valid_values(self) -> Dict:
+    def valid_values(self) -> dict:
         """
         Most operands take number values, but some have a restricted set of valid values.
         {valid_values_table}
@@ -200,7 +205,7 @@ class FundQuery(QueryBase):
     """
     @dynamic_docstring({"valid_operand_fields_table": generate_list_table_from_dict_universal(FUND_SCREENER_FIELDS)})
     @property
-    def valid_fields(self) -> Dict:
+    def valid_fields(self) -> dict:
         """
         Valid operands, grouped by category.
         {valid_operand_fields_table}
@@ -209,7 +214,7 @@ class FundQuery(QueryBase):
     
     @dynamic_docstring({"valid_values_table": generate_list_table_from_dict_universal(FUND_SCREENER_EQ_MAP)})
     @property
-    def valid_values(self) -> Dict:
+    def valid_values(self) -> dict:
         """
         Most operands take number values, but some have a restricted set of valid values.
         {valid_values_table}

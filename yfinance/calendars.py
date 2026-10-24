@@ -1,17 +1,19 @@
-from __future__ import annotations # Just in case
+from __future__ import annotations  # Just in case
+
 import json
-from typing import Any, Optional, List, Union, Dict
 import warnings
+from datetime import date, datetime, timedelta
+from typing import Any
+
 import numpy as np
-from requests import Session, Response, exceptions
 import pandas as pd
-from datetime import datetime, date, timedelta
+from requests import Response, Session, exceptions
 
 from .const import _QUERY1_URL_
-from .utils import log_indent_decorator, get_yf_logger, _parse_user_dt
-from .screener import screen
 from .data import YfData
 from .exceptions import YFException
+from .screener import screen
+from .utils import _parse_user_dt, get_yf_logger, log_indent_decorator
 
 
 class CalendarQuery:
@@ -31,7 +33,7 @@ class CalendarQuery:
     ```
     """
 
-    def __init__(self, operator: str, operand: Union[List[Any], List["CalendarQuery"]]):
+    def __init__(self, operator: str, operand: list[Any] | list[CalendarQuery]):
         """
         :param operator: Operator string, e.g., 'eq', 'gte', 'and', 'or'.
         :param operand: List of operands: can be values (str, int), or other Operands instances (nested).
@@ -180,9 +182,9 @@ class Calendars:
 
     def __init__(
         self,
-        start: Optional[Union[str, datetime, date]] = None,
-        end: Optional[Union[str, datetime, date]] = None,
-        session: Optional[Session] = None,
+        start: str | datetime | date | None = None,
+        end: str | datetime | date | None = None,
+        session: Session | None = None,
     ):
         """
         :param str | datetime | date start: start date (default today) \
@@ -209,9 +211,9 @@ class Calendars:
         self._most_active_qy: CalendarQuery = CalendarQuery("or", [])
 
         self._cache_request_body = {}
-        self.calendars: Dict[str, pd.DataFrame] = {}
+        self.calendars: dict[str, pd.DataFrame] = {}
 
-    def _parse_date_param(self, _date: Optional[Union[str, datetime, date, int]]) -> str:
+    def _parse_date_param(self, _date: str | datetime | date | int | None) -> str:
         if not _date:
             return ""
         else:
@@ -293,7 +295,7 @@ class Calendars:
 
     @log_indent_decorator
     def _get_most_active_operands(
-        self, _market_cap: Optional[float], force=False
+        self, _market_cap: float | None, force=False
     ) -> CalendarQuery:
         """
         Retrieve tickers from YF, converts them into operands accepted by YF.
@@ -358,7 +360,7 @@ class Calendars:
     @log_indent_decorator
     def get_earnings_calendar(
         self,
-        market_cap: Optional[float] = None,
+        market_cap: float | None = None,
         filter_most_active: bool = True,
         start=None,
         end=None,

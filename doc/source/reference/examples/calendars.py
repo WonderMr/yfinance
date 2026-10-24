@@ -1,5 +1,6 @@
-import yfinance as yf
 from datetime import datetime, timedelta
+
+import yfinance as yf
 
 # Default init (today + 7 days)
 calendar = yf.Calendars()
@@ -9,10 +10,10 @@ tomorrow = datetime.now() + timedelta(days=1)
 calendar = yf.Calendars(end=tomorrow)
 
 # Default calendar queries - accessing the properties will fetch the data from YF
-calendar.earnings_calendar
-calendar.ipo_info_calendar
-calendar.splits_calendar
-calendar.economic_events_calendar
+earnings_calendar = calendar.earnings_calendar
+ipo_info_calendar = calendar.ipo_info_calendar
+splits_calendar = calendar.splits_calendar
+economic_events_calendar = calendar.economic_events_calendar
 
 # Manual queries
 calendar.get_earnings_calendar()

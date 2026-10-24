@@ -8,18 +8,17 @@ Specific test class:
    python -m unittest tests.utils.TestTicker
 
 """
+import unittest
 from datetime import datetime
 from unittest import TestSuite
 
 import pandas as pd
 
-import unittest
-
-from yfinance.utils import is_valid_period_format, _dts_in_same_interval, _parse_user_dt
+from yfinance.utils import _dts_in_same_interval, _parse_user_dt, is_valid_period_format
 
 
 class TestPandas(unittest.TestCase):
-    date_strings = ["2024-08-07 09:05:00+02:00", "2024-08-07 09:05:00-04:00"]
+    date_strings = ("2024-08-07 09:05:00+02:00", "2024-08-07 09:05:00-04:00")
 
     @unittest.expectedFailure
     def test_mixed_timezones_to_datetime_fails(self):
@@ -33,12 +32,10 @@ class TestPandas(unittest.TestCase):
         series = series.map(pd.Timestamp)
         converted = pd.to_datetime(series, utc=True)
         self.assertIsNotNone(converted[0].tz)
-        i = 0
-        for dt in converted:
+        for i, dt in enumerate(converted):
             dt: datetime
             ts: pd.Timestamp = series[i]
             self.assertEqual(dt.isoformat(), ts.tz_convert(tz="UTC").isoformat())
-            i += 1
 
 
 class TestUtils(unittest.TestCase):

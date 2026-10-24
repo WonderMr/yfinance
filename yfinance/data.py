@@ -1,20 +1,19 @@
-import functools
-from functools import lru_cache
-import socket
-import time as _time
-
-from curl_cffi import requests
-from urllib.parse import urlsplit, urljoin
-from bs4 import BeautifulSoup
 import datetime
+import functools
+import socket
+import threading
+import time as _time
+from functools import lru_cache
+from typing import ClassVar
+from urllib.parse import urljoin, urlsplit
 
+from bs4 import BeautifulSoup
+from curl_cffi import requests
 from frozendict import frozendict
 
-from . import utils, cache
+from . import cache, utils
 from .config import YfConfig
-import threading
-
-from .exceptions import YFException, YFDataException, YFRateLimitError
+from .exceptions import YFDataException, YFException, YFRateLimitError
 
 
 def _is_transient_error(exception):
@@ -56,7 +55,7 @@ class SingletonMeta(type):
     """
     Metaclass that creates a Singleton instance.
     """
-    _instances = {}
+    _instances: ClassVar[dict] = {}
     _lock = threading.Lock()
 
     def __call__(cls, *args, **kwargs):
@@ -97,7 +96,7 @@ class YfData(metaclass=SingletonMeta):
             return
 
         try:
-            session.cache
+            _ = session.cache
         except AttributeError:
             # Not caching
             self._session_is_caching = False
@@ -147,7 +146,7 @@ class YfData(metaclass=SingletonMeta):
         cookies = self._session.cookies.jar._cookies
         if len(cookies) == 0:
             return False
-        yh_domains = [k for k in cookies.keys() if 'yahoo' in k]
+        yh_domains = [k for k in cookies if 'yahoo' in k]
         if len(yh_domains) > 1:
             # Possible when cookie fetched with CSRF method. Discard consent cookie.
             yh_domains = [k for k in yh_domains if 'consent' not in k]
@@ -169,7 +168,9 @@ class YfData(metaclass=SingletonMeta):
         if cookie_dict is None or len(cookie_dict) == 0:
             return False
         cookies = cookie_dict['cookie']
-        domain = list(cookies.keys())[0]
+        # Preserve IndexError for an empty cached cookie mapping.
+        domains = tuple(cookies)
+        domain = domains[0]
         cookie = cookies[domain]['/']['A3']
         expiry_ts = cookie.expires
         if expiry_ts > 2e9:
@@ -453,7 +454,8 @@ class YfData(metaclass=SingletonMeta):
         return response
 
     @lru_cache_freezeargs
-    @lru_cache(maxsize=cache_maxsize)
+    # YfData is a process-lifetime singleton; keep cache_clear/cache_info available.
+    @lru_cache(maxsize=cache_maxsize)  # noqa: B019
     def cache_get(self, url, params=None, timeout=30):
         return self.get(url, params, timeout)
 
@@ -479,6 +481,8 @@ class YfData(metaclass=SingletonMeta):
                 response_url
             ).hostname.endswith("consent.yahoo.com")
         except Exception:
+            logger = utils.get_yf_logger()
+            logger.debug("Failed to parse consent URL", exc_info=True)
             return False
 
     def _accept_consent_form(
@@ -532,7 +536,7 @@ class YfData(metaclass=SingletonMeta):
                 data[name] = val
     
         # If no explicit agree/accept in inputs, add a best-effort flag
-        lowered = {k.lower() for k in data.keys()}
+        lowered = {k.lower() for k in data}
         if not any(("agree" in k or "accept" in k) for k in lowered):
             data["agree"] = "1"
     

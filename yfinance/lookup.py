@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -20,6 +18,7 @@
 #
 
 import json as _json
+
 import pandas as pd
 
 from . import utils
@@ -72,7 +71,7 @@ class Lookup:
             "region": "US"
         }
 
-        self._logger.debug(f'GET Lookup for ticker ({self.query}) with parameters: {str(dict(params))}')
+        self._logger.debug(f'GET Lookup for ticker ({self.query}) with parameters: {dict(params)!s}')
 
         data = self._data.get(url=url, params=params, timeout=self.timeout)
         if data is None or "Will be right back" in data.text:

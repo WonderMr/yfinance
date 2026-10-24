@@ -1,15 +1,15 @@
 import asyncio
 import base64
 import json
-from typing import List, Optional, Callable, Union
+from collections.abc import Callable
 
-from websockets.sync.client import connect as sync_connect
+from google.protobuf.json_format import MessageToDict
 from websockets.asyncio.client import connect as async_connect
+from websockets.sync.client import connect as sync_connect
 
 from yfinance import utils
 from yfinance.config import YfConfig
 from yfinance.pricing_pb2 import PricingData
-from google.protobuf.json_format import MessageToDict
 
 
 class BaseWebSocket:
@@ -30,7 +30,7 @@ class BaseWebSocket:
         except Exception as e:
             if not YfConfig.debug.hide_exceptions:
                 raise
-            self.logger.error("Failed to decode message: %s", e, exc_info=True)
+            self.logger.exception("Failed to decode message")
             if self.verbose:
                 print("Failed to decode message: %s", e)
             return {
@@ -66,7 +66,7 @@ class AsyncWebSocket(BaseWebSocket):
         except Exception as e:
             if not YfConfig.debug.hide_exceptions:
                 raise
-            self.logger.error("Failed to connect to WebSocket: %s", e, exc_info=True)
+            self.logger.exception("Failed to connect to WebSocket")
             if self.verbose:
                 print(f"Failed to connect to WebSocket: {e}")
             self._ws = None
@@ -86,12 +86,12 @@ class AsyncWebSocket(BaseWebSocket):
             except Exception as e:
                 if not YfConfig.debug.hide_exceptions:
                     raise
-                self.logger.error("Error in heartbeat subscription: %s", e, exc_info=True)
+                self.logger.exception("Error in heartbeat subscription")
                 if self.verbose:
                     print(f"Error in heartbeat subscription: {e}")
                 break
 
-    async def subscribe(self, symbols: Union[str, List[str]]):
+    async def subscribe(self, symbols: str | list[str]):
         """
         Subscribe to a stock symbol or a list of stock symbols.
 
@@ -116,7 +116,7 @@ class AsyncWebSocket(BaseWebSocket):
         if self.verbose:
             print(f"Subscribed to symbols: {symbols}")
 
-    async def unsubscribe(self, symbols: Union[str, List[str]]):
+    async def unsubscribe(self, symbols: str | list[str]):
         """
         Unsubscribe from a stock symbol or a list of stock symbols.
 
@@ -171,7 +171,7 @@ class AsyncWebSocket(BaseWebSocket):
                         except Exception as handler_exception:
                             if not YfConfig.debug.hide_exceptions:
                                 raise
-                            self.logger.error("Error in message handler: %s", handler_exception, exc_info=True)
+                            self.logger.exception("Error in message handler")
                             if self.verbose:
                                 print("Error in message handler:", handler_exception)
                     else:
@@ -187,7 +187,7 @@ class AsyncWebSocket(BaseWebSocket):
             except Exception as e:
                 if not YfConfig.debug.hide_exceptions:
                     raise
-                self.logger.error("Error while listening to messages: %s", e, exc_info=True)
+                self.logger.exception("Error while listening to messages")
                 if self.verbose:
                     print("Error while listening to messages: %s", e)
 
@@ -240,13 +240,13 @@ class WebSocket(BaseWebSocket):
                 if self.verbose:
                     print("Connected to WebSocket.")
         except Exception as e:
-            self.logger.error("Failed to connect to WebSocket: %s", e, exc_info=True)
+            self.logger.exception("Failed to connect to WebSocket")
             if self.verbose:
                 print(f"Failed to connect to WebSocket: {e}")
             self._ws = None
             raise
 
-    def subscribe(self, symbols: Union[str, List[str]]):
+    def subscribe(self, symbols: str | list[str]):
         """
         Subscribe to a stock symbol or a list of stock symbols.
 
@@ -267,7 +267,7 @@ class WebSocket(BaseWebSocket):
         if self.verbose:
             print(f"Subscribed to symbols: {symbols}")
 
-    def unsubscribe(self, symbols: Union[str, List[str]]):
+    def unsubscribe(self, symbols: str | list[str]):
         """
         Unsubscribe from a stock symbol or a list of stock symbols.
 
@@ -288,7 +288,7 @@ class WebSocket(BaseWebSocket):
         if self.verbose:
             print(f"Unsubscribed from symbols: {symbols}")
 
-    def listen(self, message_handler: Optional[Callable[[dict], None]] = None):
+    def listen(self, message_handler: Callable[[dict], None] | None = None):
         """
         Start listening to messages from the WebSocket server.
 
@@ -314,7 +314,7 @@ class WebSocket(BaseWebSocket):
                     except Exception as handler_exception:
                         if not YfConfig.debug.hide_exceptions:
                             raise
-                        self.logger.error("Error in message handler: %s", handler_exception, exc_info=True)
+                        self.logger.exception("Error in message handler")
                         if self.verbose:
                             print("Error in message handler:", handler_exception)
                 else:
@@ -329,7 +329,7 @@ class WebSocket(BaseWebSocket):
             except Exception as e:
                 if not YfConfig.debug.hide_exceptions:
                     raise
-                self.logger.error("Error while listening to messages: %s", e, exc_info=True)
+                self.logger.exception("Error while listening to messages")
                 if self.verbose:
                     print("Error while listening to messages: %s", e)
                 break

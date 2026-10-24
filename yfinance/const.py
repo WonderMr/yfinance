@@ -308,10 +308,10 @@ SECTOR_INDUSTY_MAPPING = {
                     'Utilities—Renewable'},
 }
 SECTOR_INDUSTY_MAPPING_LC = {}
-for k in SECTOR_INDUSTY_MAPPING.keys():
+for k, industries in SECTOR_INDUSTY_MAPPING.items():
     k2 = k.lower().replace('& ', '').replace('- ', '').replace(', ', ' ').replace(' ', '-')
     SECTOR_INDUSTY_MAPPING_LC[k2] = []
-    for v in SECTOR_INDUSTY_MAPPING[k]:
+    for v in industries:
         v2 = v.lower().replace('& ', '').replace('- ', '').replace(', ', ' ').replace(' ', '-')
         SECTOR_INDUSTY_MAPPING_LC[k2].append(v2)
 
@@ -509,7 +509,7 @@ EQUITY_SCREENER_EQ_MAP = {
     }
 }
 EQUITY_SCREENER_EQ_MAP['region'] = EQUITY_SCREENER_EQ_MAP['exchange'].keys()
-ordered_keys = ['region'] + [k for k in EQUITY_SCREENER_EQ_MAP.keys() if k != 'region']
+ordered_keys = ['region'] + [k for k in EQUITY_SCREENER_EQ_MAP if k != 'region']
 EQUITY_SCREENER_EQ_MAP = {k:EQUITY_SCREENER_EQ_MAP[k] for k in ordered_keys}
 FUND_SCREENER_EQ_MAP = {
     "exchange": {
@@ -666,8 +666,8 @@ EQUITY_SCREENER_FIELDS = {
         "ebitdamargin.lasttwelvemonths",
         "ebit.lasttwelvemonths",
         "basicepscontinuingoperations.lasttwelvemonths",
-        "netepsbasic.lasttwelvemonths"
-        "netepsdiluted.lasttwelvemonths"},
+        ("netepsbasic.lasttwelvemonths"
+         "netepsdiluted.lasttwelvemonths")},
     "balance_sheet":{
         "totalassets.lasttwelvemonths",
         "totalcommonsharesoutstanding.lasttwelvemonths",

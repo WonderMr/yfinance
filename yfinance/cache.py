@@ -1,11 +1,13 @@
-import peewee as _peewee
-from threading import Lock, Thread
-import os as _os
-import platformdirs as _ad
 import atexit as _atexit
 import datetime as _dt
+import os as _os
 import pickle as _pkl
 import time as _time
+from contextlib import suppress
+from threading import Lock, Thread
+
+import peewee as _peewee
+import platformdirs as _ad
 
 from .utils import get_yf_logger
 
@@ -64,11 +66,9 @@ class _TzDBManager:
     @classmethod
     def close_db(cls):
         if cls._db is not None:
-            try:
+            # Shutdown must not fail, including when database modules are finalizing.
+            with suppress(Exception):
                 cls._db.close()
-            except Exception:
-                # Must discard exceptions because Python trying to quit.
-                pass
 
 
     @classmethod
@@ -319,11 +319,9 @@ class _CookieDBManager:
     @classmethod
     def close_db(cls):
         if cls._db is not None:
-            try:
+            # Shutdown must not fail, including when database modules are finalizing.
+            with suppress(Exception):
                 cls._db.close()
-            except Exception:
-                # Must discard exceptions because Python trying to quit.
-                pass
 
 
     @classmethod
@@ -455,23 +453,14 @@ class _CookieCache:
         db = self.get_db()
         if db is None:
             return
-        try:
-            q = _CookieSchema.delete().where(_CookieSchema.strategy == strategy)
-            q.execute()
-            if cookie is None:
-                return
-            with db.atomic():
-                cookie_pkl = _pkl.dumps(cookie, _pkl.HIGHEST_PROTOCOL)
-                _CookieSchema.insert(strategy=strategy, cookie_bytes=cookie_pkl).execute()
-        except _peewee.IntegrityError:
-            raise
-            # # Integrity error means the strategy already exists. Try updating the strategy.
-            # old_value = self.lookup(strategy)
-            # if old_value != cookie:
-            #     get_yf_logger().debug(f"cookie for strategy {strategy} changed from {old_value} to {cookie}.")
-            #     with db.atomic():
-            #         q = _CookieSchema.update(cookie=cookie).where(_CookieSchema.strategy == strategy)
-            #         q.execute()
+        q = _CookieSchema.delete().where(_CookieSchema.strategy == strategy)
+        q.execute()
+        if cookie is None:
+            return
+        with db.atomic():
+            cookie_pkl = _pkl.dumps(cookie, _pkl.HIGHEST_PROTOCOL)
+            _CookieSchema.insert(strategy=strategy, cookie_bytes=cookie_pkl).execute()
+
 
 
 def get_cookie_cache():
@@ -529,11 +518,9 @@ class _ISINDBManager:
     @classmethod
     def close_db(cls):
         if cls._db is not None:
-            try:
+            # Shutdown must not fail, including when database modules are finalizing.
+            with suppress(Exception):
                 cls._db.close()
-            except Exception:
-                # Must discard exceptions because Python trying to quit.
-                pass
 
 
     @classmethod

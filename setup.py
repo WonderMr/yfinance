@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 #
 # yfinance - market data downloader
@@ -6,10 +5,10 @@
 
 """yfinance - market data downloader"""
 
-from setuptools import setup, find_packages
 # from codecs import open
-import io
 from os import path
+
+from setuptools import find_packages, setup
 
 # --- get version ---
 version = "unknown"
@@ -22,7 +21,7 @@ with open("yfinance/version.py") as f:
 here = path.abspath(path.dirname(__file__))
 
 # Get the long description from the README file
-with io.open(path.join(here, 'README.md'), encoding='utf-8') as f:
+with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(

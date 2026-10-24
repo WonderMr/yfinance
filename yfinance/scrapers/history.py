@@ -1,18 +1,31 @@
-from curl_cffi import requests
-from math import isclose
 import bisect
 import datetime as _datetime
-import dateutil as _dateutil
 import logging
-import numpy as np
-import pandas as pd
 import time as _time
 import warnings
+from math import isclose
+
+import dateutil as _dateutil
+import numpy as np
+import pandas as pd
+from curl_cffi import requests
 
 from yfinance import shared, utils
 from yfinance.config import YfConfig
 from yfinance.const import _BASE_URL_, _PRICE_COLNAMES_, _SENTINEL_
-from yfinance.exceptions import YFDataException, YFInvalidPeriodError, YFPricesMissingError, YFRateLimitError, YFTzMissingError
+from yfinance.exceptions import (
+    YFDataException,
+    YFInvalidPeriodError,
+    YFPricesMissingError,
+    YFTzMissingError,
+)
+from yfinance.exceptions import (
+    YFRateLimitError as _YFRateLimitError,
+)
+
+# Compatibility export retained for callers of this module.
+YFRateLimitError = _YFRateLimitError
+
 
 class PriceHistory:
     def __init__(self, data, ticker, tz, session=None, proxy=_SENTINEL_):
@@ -48,6 +61,8 @@ class PriceHistory:
                 raise YFDataException("*** YAHOO! FINANCE IS CURRENTLY DOWN! ***")
             return data.json()
         except Exception as e:
+            logger = utils.get_yf_logger()
+            logger.debug("History request failed", exc_info=True)
             return e
 
     @utils.log_indent_decorator
@@ -162,7 +177,7 @@ class PriceHistory:
 
         start_user = start
         end_user = end
-        if start or end or (period and period.lower() == "max"):
+        if start is not None or end is not None or (period and period.lower() == "max"):
             # Check can get TZ. Fail => probably delisted
             tz = self.tz
             if tz is None:
@@ -177,21 +192,22 @@ class PriceHistory:
                     logger.error(err_msg)
                 return utils.empty_df()
 
-        if start:
+        start_dt = None
+        if start is not None:
             start_dt = utils._parse_user_dt(start, tz)
             start = int(start_dt.timestamp())
         end_dt = None
-        if end:
+        if end is not None:
             end_dt = utils._parse_user_dt(end, tz)
             end = int(end_dt.timestamp())
 
         if period is None:
-            if not (start or end):
+            if start is None and end is None:
                 period = '1mo'  # default
-            elif not start:
+            elif start is None and end_dt is not None:
                 start_dt = end_dt - utils._interval_to_timedelta('1mo')
                 start = int(start_dt.timestamp())
-            elif not end:
+            elif end is None:
                 end_dt = pd.Timestamp.now('UTC').tz_convert(tz)
                 end = int(end_dt.timestamp())
         else:
@@ -208,19 +224,19 @@ class PriceHistory:
                     else:
                         start = end - 3122064000  # 99 years
                     start += 5 # allow for processing time
-            elif start and end:
+            elif start is not None and end is not None:
                 raise ValueError("Setting period, start and end is nonsense. Set maximum 2 of them.")
-            elif start or end:
+            elif start is not None or end is not None:
                 period_td = utils._interval_to_timedelta(period)
-                if end is None:
+                if end_dt is None and start_dt is not None:
                     end_dt = start_dt + period_td
                     end = int(end_dt.timestamp())
-                if start is None:
+                if start_dt is None and end_dt is not None:
                     start_dt = end_dt - period_td
                     start = int(start_dt.timestamp())
                 period = None
 
-        if start or end:
+        if start is not None or end is not None:
             params = {"period1": start, "period2": end}
         else:
             period = period.lower()
@@ -241,7 +257,7 @@ class PriceHistory:
         for k in ["period1", "period2"]:
             if k in params_pretty:
                 params_pretty[k] = str(pd.Timestamp(params[k], unit='s').tz_localize("UTC").tz_convert(tz))
-        logger.debug(f'{self.ticker}: Yahoo GET parameters: {str(params_pretty)}')
+        logger.debug(f'{self.ticker}: Yahoo GET parameters: {params_pretty!s}')
 
         if end is not None and end_dt is None:
             end_dt = pd.Timestamp(end, unit="s").tz_localize("UTC")
@@ -329,9 +345,11 @@ class PriceHistory:
         # parse quotes
         quotes = utils.parse_quotes(data["chart"]["result"][0])
         # Yahoo bug fix - it often appends latest price even if after end date
-        if end and not quotes.empty:
-            if end_dt is not None and quotes.index[-1] >= end_dt.tz_convert('UTC').tz_localize(None):
-                quotes = quotes.drop(quotes.index[-1])
+        if (
+            end is not None and not quotes.empty and end_dt is not None
+            and quotes.index[-1] >= end_dt.tz_convert('UTC').tz_localize(None)
+        ):
+            quotes = quotes.drop(quotes.index[-1])
         if quotes.empty:
             msg = f'{self.ticker}: yfinance received OHLC data: EMPTY'
         elif len(quotes) == 1:
@@ -401,15 +419,14 @@ class PriceHistory:
 
         if capital_gains is not None:
             capital_gains = utils.set_df_tz(capital_gains, interval, tz_exchange)
-        if start is not None:
-            if not quotes.empty:
-                start_d = quotes.index[0].floor('D')
-                if dividends is not None:
-                    dividends = dividends.loc[start_d:]
-                if capital_gains is not None:
-                    capital_gains = capital_gains.loc[start_d:]
-                if splits is not None:
-                    splits = splits.loc[start_d:]
+        if start is not None and not quotes.empty:
+            start_d = quotes.index[0].floor('D')
+            if dividends is not None:
+                dividends = dividends.loc[start_d:]
+            if capital_gains is not None:
+                capital_gains = capital_gains.loc[start_d:]
+            if splits is not None:
+                splits = splits.loc[start_d:]
         if end is not None:
             # -1 because date-slice end is inclusive
             end_dt_sub1 = end_dt - pd.Timedelta(1)
@@ -515,12 +532,12 @@ class PriceHistory:
             if raise_errors or (not YfConfig.debug.hide_exceptions):
                 raise
             if auto_adjust:
-                err_msg = "auto_adjust failed with %s" % e
+                err_msg = f"auto_adjust failed with {e}"
             else:
-                err_msg = "back_adjust failed with %s" % e
+                err_msg = f"back_adjust failed with {e}"
             shared._DFS[self.ticker] = utils.empty_df()
             shared._ERRORS[self.ticker] = err_msg
-            logger.error('%s: %s' % (self.ticker, err_msg))
+            logger.error(f'{self.ticker}: {err_msg}')
 
         if rounding:
             df = np.round(df, data["chart"]["result"][0]["meta"]["priceHint"])
@@ -714,7 +731,7 @@ class PriceHistory:
         log_extras = {'yf_cat': 'price-reconstruct', 'yf_interval': interval, 'yf_symbol': self.ticker}
 
         if not isinstance(df, pd.DataFrame):
-            raise ValueError("'df' must be a Pandas DataFrame not", type(df))
+            raise ValueError("'df' must be a Pandas DataFrame not", type(df))  # noqa: TRY004 - Preserve the established ValueError API.
         if interval == "1m":
             # Can't go smaller than 1m so can't reconstruct
             return df
@@ -751,7 +768,7 @@ class PriceHistory:
         if self._reconstruct_start_interval is None:
             self._reconstruct_start_interval = interval
         if interval != self._reconstruct_start_interval and interval != nexts[self._reconstruct_start_interval]:
-            msg = "Hit max depth of 2 ('{}'->'{}'->'{}')".format(self._reconstruct_start_interval, nexts[self._reconstruct_start_interval], interval)
+            msg = f"Hit max depth of 2 ('{self._reconstruct_start_interval}'->'{nexts[self._reconstruct_start_interval]}'->'{interval}')"
             logger.info(msg, extra=log_extras)
             return df
 
@@ -797,11 +814,7 @@ class PriceHistory:
         # Group nearby NaN-intervals together to reduce number of Yahoo fetches
         dts_groups = [[dts_to_repair[0]]]
         # Note on setting max size: have to allow space for adding good data
-        if sub_interval == "1mo":
-            grp_max_size = _dateutil.relativedelta.relativedelta(years=2)
-        elif sub_interval == "1wk":
-            grp_max_size = _dateutil.relativedelta.relativedelta(years=2)
-        elif sub_interval == "1d":
+        if sub_interval == "1mo" or sub_interval == "1wk" or sub_interval == "1d":
             grp_max_size = _dateutil.relativedelta.relativedelta(years=2)
         elif sub_interval == "1h":
             grp_max_size = _dateutil.relativedelta.relativedelta(years=1)
@@ -826,15 +839,16 @@ class PriceHistory:
             g = dts_groups[i]
             g0 = g[0]
             i0 = df_good.index.get_indexer([g0], method="nearest")[0]
-            if i0 > 0:
-                if (min_dt is None or df_good.index[i0 - 1] >= min_dt) and \
-                        ((not intraday) or df_good.index[i0 - 1].date() == g0.date()):
-                    i0 -= 1
+            if (
+                i0 > 0
+                and (min_dt is None or df_good.index[i0 - 1] >= min_dt)
+                and ((not intraday) or df_good.index[i0 - 1].date() == g0.date())
+            ):
+                i0 -= 1
             gl = g[-1]
             il = df_good.index.get_indexer([gl], method="nearest")[0]
-            if il < len(df_good) - 1:
-                if (not intraday) or df_good.index[il + 1].date() == gl.date():
-                    il += 1
+            if (il < len(df_good) - 1) and ((not intraday) or df_good.index[il + 1].date() == gl.date()):
+                il += 1
             good_dts = df_good.index[i0:il + 1]
             dts_groups[i] += good_dts.to_list()
             dts_groups[i].sort()
@@ -847,9 +861,7 @@ class PriceHistory:
             start_dt = g[0]
             start_d = start_dt.date()
             reject = False
-            if sub_interval == "1h" and (_datetime.date.today() - start_d) > _datetime.timedelta(days=729):
-                reject = True
-            elif sub_interval in ["30m", "15m"] and (_datetime.date.today() - start_d) > _datetime.timedelta(days=59):
+            if sub_interval == "1h" and (_datetime.date.today() - start_d) > _datetime.timedelta(days=729) or sub_interval in ["30m", "15m"] and (_datetime.date.today() - start_d) > _datetime.timedelta(days=59):
                 reject = True
             if reject:
                 # Don't bother requesting more price data, Yahoo will reject
@@ -1129,7 +1141,6 @@ class PriceHistory:
                 # Should never happen but just-in-case
                 if not YfConfig.debug.hide_exceptions:
                     raise
-                pass
         if prices_in_subunits:
             for c in _PRICE_COLNAMES_:
                 df[c] *= m
@@ -1483,7 +1494,7 @@ class PriceHistory:
         if n_fixed > 0:
             msg = f"{self.ticker}: fixed {n_fixed}/{n_before} value=0 errors in {interval} price data"
             if n_fixed < 4:
-                dts_repaired = sorted(list(set(dts_tagged).difference(dts_not_repaired)))
+                dts_repaired = sorted(set(dts_tagged).difference(dts_not_repaired))
                 msg += f": {dts_repaired}"
             logger.debug(msg, extra=log_extras)
 
@@ -2035,21 +2046,20 @@ class PriceHistory:
             if 'phantom' in checks:
                 checks.remove('phantom')
 
-        if not div_status_df[checks].any().any():
-            # Maybe failed to detect a too-small div. If div is ~0.01x of previous and next, then
-            # treat as a 0.01x error
-            if len(div_status_df) > 1:
-                for i in range(0, len(div_status_df)):
-                    r_pre, r_post = None, None
-                    if i > 0:
-                        r_pre = div_status_df['%'].iloc[i-1] / div_status_df['%'].iloc[i]
-                    if i < (len(div_status_df)-1):
-                        r_post = div_status_df['%'].iloc[i+1] / div_status_df['%'].iloc[i]
-                    r_pre = r_pre or r_post
-                    r_post = r_post or r_pre
-                    if abs(r_pre-currency_divide)<20 and abs(r_post-currency_divide)<20:
-                        div_dt = div_status_df.index[i]
-                        div_status_df.loc[div_dt, 'div_too_small'] = True
+        # Maybe failed to detect a too-small div. If div is ~0.01x of previous and next, then
+        # treat as a 0.01x error
+        if (not div_status_df[checks].any().any()) and (len(div_status_df) > 1):
+            for i in range(len(div_status_df)):
+                r_pre, r_post = None, None
+                if i > 0:
+                    r_pre = div_status_df['%'].iloc[i-1] / div_status_df['%'].iloc[i]
+                if i < (len(div_status_df)-1):
+                    r_post = div_status_df['%'].iloc[i+1] / div_status_df['%'].iloc[i]
+                r_pre = r_pre or r_post
+                r_post = r_post or r_pre
+                if abs(r_pre-currency_divide)<20 and abs(r_post-currency_divide)<20:
+                    div_dt = div_status_df.index[i]
+                    div_status_df.loc[div_dt, 'div_too_small'] = True
 
         if not div_status_df[checks].any().any():
             # Perfect
@@ -2295,10 +2305,9 @@ class PriceHistory:
                         div_status_df.loc[fc, c] = False
                         continue
 
-                if c == 'adj_missing':
-                    if cluster[c].iloc[-1] and n_fail == 1:
-                        # Only the latest/last row is missing, genuine error
-                        continue
+                if (c == 'adj_missing') and (cluster[c].iloc[-1] and n_fail == 1):
+                    # Only the latest/last row is missing, genuine error
+                    continue
                 if c == 'div_exceeds_adj':
                     continue
 
@@ -2400,12 +2409,11 @@ class PriceHistory:
                         cluster.loc[dt, 'div_exceeds_adj'] = False
                         n_failed_checks -= 1
 
-                if div_pre_split:
-                    if adj_exceeds_prices:
-                        # redundant information
-                        adj_exceeds_prices = False
-                        cluster.loc[dt, 'adj_exceeds_prices'] = False
-                        n_failed_checks -= 1
+                if div_pre_split and adj_exceeds_prices:
+                    # redundant information
+                    adj_exceeds_prices = False
+                    cluster.loc[dt, 'adj_exceeds_prices'] = False
+                    n_failed_checks -= 1
 
                 if n_failed_checks == 1:
                     if div_exceeds_adj or adj_exceeds_div:
@@ -2576,7 +2584,7 @@ class PriceHistory:
                         # Probably just a currency unit mixup.
                         df2.loc[dt, 'Dividends'] *= currency_divide
                         k = 'too-small div'
-                        if 'FX was repaired' in row and row['FX was repaired']:
+                        if row.get('FX was repaired'):
                             # Complication: not just a currency unit mixup, but
                             # mixed up the local currency with $. So need to 
                             # recalculate adjustment.
@@ -2619,11 +2627,9 @@ class PriceHistory:
                         close = div/row['%']
                         adj_present = row['present adj']
                         k = 'div-too-big and adj-too-small'
-                        #
                         div_true = div/currency_divide
                         pct_true = div_true / close
                         df2.loc[dt, 'Dividends'] = div_true
-                        #
                         adj_correct = 1.0 - pct_true
                         adj_correction = adj_correct / adj_present
                         df2.loc[    :enddt, 'Adj Close'] *= adj_correction
@@ -2636,8 +2642,8 @@ class PriceHistory:
             if cluster.empty:
                 continue
 
-        for k in div_repairs:
-            msg = f"Repaired {k}: {[str(dt.date()) for dt in sorted(div_repairs[k])]}"
+        for k, repaired_dates in div_repairs.items():
+            msg = f"Repaired {k}: {[str(dt.date()) for dt in sorted(repaired_dates)]}"
             logger.info(msg, extra=log_extras)
 
         if not df2_nan.empty:
@@ -2675,7 +2681,7 @@ class PriceHistory:
             logger.debug('price-repair-split: No splits in data')
             return df
 
-        logger.debug(f'Splits: {str(df["Stock Splits"][split_f].to_dict())}', extra=log_extras)
+        logger.debug(f'Splits: {df["Stock Splits"][split_f].to_dict()!s}', extra=log_extras)
 
         if 'Repaired?' not in df.columns:
             df['Repaired?'] = False
@@ -3114,7 +3120,7 @@ class PriceHistory:
                     return df
 
         if logger.isEnabledFor(logging.DEBUG):
-            df_workings['i'] = list(range(0, df_workings.shape[0]))
+            df_workings['i'] = list(range(df_workings.shape[0]))
             df_workings['i_rev'] = df_workings.shape[0]-1 - df_workings['i']
             if correct_columns_individually:
                 f_change = df_workings[[c+'_down' for c in debug_cols]].any(axis=1) | df_workings[[c+'_up' for c in debug_cols]].any(axis=1)

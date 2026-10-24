@@ -1,5 +1,5 @@
+
 import pandas as pd
-from typing import Dict, Optional
 
 from yfinance import utils
 from yfinance.config import YfConfig
@@ -68,7 +68,7 @@ class FundsData:
         return self._description
     
     @property
-    def fund_overview(self) -> Dict[str, Optional[str]]:
+    def fund_overview(self) -> dict[str, str | None]:
         """
         Returns the fund overview.
 
@@ -92,7 +92,7 @@ class FundsData:
         return self._fund_operations
 
     @property
-    def asset_classes(self) -> Dict[str, float]:
+    def asset_classes(self) -> dict[str, float]:
         """
         Returns the asset classes of the fund.
 
@@ -140,7 +140,7 @@ class FundsData:
         return self._bond_holdings
 
     @property
-    def bond_ratings(self) -> Dict[str, float]:
+    def bond_ratings(self) -> dict[str, float]:
         """
         Returns the bond ratings of the fund.
 
@@ -152,7 +152,7 @@ class FundsData:
         return self._bond_ratings
 
     @property
-    def sector_weightings(self) -> Dict[str,float]:
+    def sector_weightings(self) -> dict[str,float]:
         """
         Returns the sector weightings of the fund.
 
@@ -170,7 +170,7 @@ class FundsData:
         Returns:
             dict: The raw JSON data.
         """
-        modules = ','.join(["quoteType", "summaryProfile", "topHoldings", "fundProfile"])
+        modules = "quoteType,summaryProfile,topHoldings,fundProfile"
         params_dict = {"modules": modules, "corsDomain": "finance.yahoo.com", "symbol": self._symbol, "formatted": "false"}
         result = self._data.get_raw_json(_QUOTE_SUMMARY_URL_+self._symbol, params=params_dict)
         return result
@@ -304,10 +304,10 @@ class FundsData:
         }).set_index("Average")
 
         # bond ratings
-        self._bond_ratings = dict((key, d[key]) for d in data.get("bondRatings", []) for key in d)
+        self._bond_ratings = {key: d[key] for d in data.get("bondRatings", []) for key in d}
 
         # sector weightings
-        self._sector_weightings = dict((key, d[key]) for d in data.get("sectorWeightings", []) for key in d)
+        self._sector_weightings = {key: d[key] for d in data.get("sectorWeightings", []) for key in d}
         
     def _parse_fund_profile(self, data):
         """
