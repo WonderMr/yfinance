@@ -1,13 +1,12 @@
-from __future__ import print_function
+
 
 import pandas as _pd
-from typing import Dict, Optional
 
 from ..config import YfConfig
 from ..const import SECTOR_INDUSTY_MAPPING_LC
 from ..utils import dynamic_docstring, generate_list_table_from_dict, get_yf_logger
+from .domain import _QUERY_URL_, Domain
 
-from .domain import Domain, _QUERY_URL_
 
 class Sector(Domain):
     """
@@ -26,11 +25,11 @@ class Sector(Domain):
             :attr:`Sector.industries <yfinance.Sector.industries>`
                 Map of sector and industry
         """
-        super(Sector, self).__init__(key, session)
+        super().__init__(key, session)
         self._query_url: str = f'{_QUERY_URL_}/sectors/{self._key}'
-        self._top_etfs: Optional[Dict] = None
-        self._top_mutual_funds: Optional[Dict] = None
-        self._industries: Optional[_pd.DataFrame] = None
+        self._top_etfs: dict | None = None
+        self._top_mutual_funds: dict | None = None
+        self._industries: _pd.DataFrame | None = None
 
     def __repr__(self):
         """
@@ -42,7 +41,7 @@ class Sector(Domain):
         return f'yfinance.Sector object <{self._key}>'
     
     @property
-    def top_etfs(self) -> Dict[str, str]:
+    def top_etfs(self) -> dict[str, str]:
         """
         Gets the top ETFs for the sector.
 
@@ -53,7 +52,7 @@ class Sector(Domain):
         return self._top_etfs
 
     @property
-    def top_mutual_funds(self) -> Dict[str, str]:
+    def top_mutual_funds(self) -> dict[str, str]:
         """
         Gets the top mutual funds for the sector.
 
@@ -77,7 +76,7 @@ class Sector(Domain):
         self._ensure_fetched(self._industries)
         return self._industries
     
-    def _parse_top_etfs(self, top_etfs: Dict) -> Dict[str, str]:
+    def _parse_top_etfs(self, top_etfs: dict) -> dict[str, str]:
         """
         Parses top ETF data from the API response.
 
@@ -89,7 +88,7 @@ class Sector(Domain):
         """
         return {e.get('symbol'): e.get('name') for e in top_etfs}
 
-    def _parse_top_mutual_funds(self, top_mutual_funds: Dict) -> Dict[str, str]:
+    def _parse_top_mutual_funds(self, top_mutual_funds: dict) -> dict[str, str]:
         """
         Parses top mutual funds data from the API response.
 
@@ -101,7 +100,7 @@ class Sector(Domain):
         """
         return {e.get('symbol'): e.get('name') for e in top_mutual_funds}
     
-    def _parse_industries(self, industries: Dict) -> _pd.DataFrame:
+    def _parse_industries(self, industries: dict) -> _pd.DataFrame:
         """
         Parses industry data from the API response into a DataFrame.
 

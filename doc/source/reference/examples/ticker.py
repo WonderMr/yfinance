@@ -6,20 +6,20 @@ dat = yf.Ticker("MSFT")
 dat.history(period='1mo')
 
 # options
-dat.option_chain(dat.options[0]).calls
+calls = dat.option_chain(dat.options[0]).calls
 
 # get financials
-dat.balance_sheet
-dat.quarterly_income_stmt
+balance_sheet = dat.balance_sheet
+quarterly_income_stmt = dat.quarterly_income_stmt
 
 # dates
-dat.calendar
+calendar = dat.calendar
 
 # general info
-dat.info
+info = dat.info
 
 # analysis
-dat.analyst_price_targets
+analyst_price_targets = dat.analyst_price_targets
 
 # websocket
 dat.live()

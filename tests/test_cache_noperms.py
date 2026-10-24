@@ -8,10 +8,10 @@ Specific test class:
    python -m unittest tests.cache.TestCache
 
 """
-from tests.context import yfinance as yf
-
-import unittest
 import os
+import unittest
+
+from tests.context import yfinance as yf
 
 
 class TestCacheNoPermission(unittest.TestCase):

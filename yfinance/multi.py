@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -19,22 +17,24 @@
 # limitations under the License.
 #
 
-from __future__ import print_function
 
 import logging
 import os
 import traceback
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Union
 
 import pandas as _pd
 from curl_cffi import requests
 
-from . import Ticker, shared, utils
+from . import shared, utils
+from .config import YfConfig as _YfConfig
 from .const import _SENTINEL_
 from .data import YfData
-from .config import YfConfig
+from .ticker import Ticker
+
+# Compatibility export retained for callers of this module.
+YfConfig = _YfConfig
 
 
 @utils.log_indent_decorator
@@ -60,7 +60,7 @@ def download(
     session=None,
     multi_level_index=True,
     _retry=True,
-) -> Union[_pd.DataFrame, None]:
+) -> _pd.DataFrame | None:
     """
     Download yahoo tickers
     :Parameters:
@@ -220,6 +220,8 @@ def download(
                     with shared._DFS_LOCK:
                         shared._DFS[ticker.upper()] = data
                 except Exception as e:
+                    logger = utils.get_yf_logger()
+                    logger.debug(f"{ticker}: download failed", exc_info=True)
                     with shared._DFS_LOCK:
                         shared._DFS[ticker.upper()] = utils.empty_df()
                     with shared._ERRORS_LOCK:
@@ -249,6 +251,8 @@ def download(
                 with shared._DFS_LOCK:
                     shared._DFS[ticker.upper()] = data
             except Exception as e:
+                logger = utils.get_yf_logger()
+                logger.debug(f"{ticker}: download failed", exc_info=True)
                 with shared._DFS_LOCK:
                     shared._DFS[ticker.upper()] = utils.empty_df()
                 with shared._ERRORS_LOCK:
@@ -269,8 +273,7 @@ def download(
         # Send errors to logging module
         logger = utils.get_yf_logger()
         logger.error(
-            "\n%.f Failed download%s:"
-            % (len(errors_copy), "s" if len(errors_copy) > 1 else "")
+            "\n{:.0f} Failed download{}:".format(len(errors_copy), "s" if len(errors_copy) > 1 else "")
         )
 
         # Log each distinct error once, with list of symbols affected
@@ -282,8 +285,8 @@ def download(
                 errors[err] = [ticker]
             else:
                 errors[err].append(ticker)
-        for err in errors.keys():
-            logger.error(f"{errors[err]}: " + err)
+        for err, tickers_with_error in errors.items():
+            logger.error(f"{tickers_with_error}: " + err)
 
         # Log each distinct traceback once, with list of symbols affected
         with shared._TRACEBACKS_LOCK:
@@ -296,12 +299,12 @@ def download(
                 tbs[tb] = [ticker]
             else:
                 tbs[tb].append(ticker)
-        for tb in tbs.keys():
-            logger.debug(f"{tbs[tb]}: " + tb)
+        for tb, tickers_with_traceback in tbs.items():
+            logger.debug(f"{tickers_with_traceback}: " + tb)
 
     if ignore_tz:
         with shared._DFS_LOCK:
-            for tkr in shared._DFS.keys():
+            for tkr in shared._DFS:
                 if (shared._DFS[tkr] is not None) and (shared._DFS[tkr].shape[0] > 0):
                     shared._DFS[tkr].index = shared._DFS[tkr].index.tz_localize(None)
 
@@ -340,6 +343,8 @@ def download(
             utils._df_stats("AFTER_CONCAT", df_slice, tkr)
 
     except Exception:
+        logger = utils.get_yf_logger()
+        logger.debug("Realigning download data", exc_info=True)
         _realign_dfs()
         with shared._DFS_LOCK:
             data = _pd.concat(
@@ -376,12 +381,14 @@ def _realign_dfs():
                 idx_len = len(df)
                 idx = df.index
 
-        for key in shared._DFS.keys():
+        for key in shared._DFS:
             try:
                 shared._DFS[key] = _pd.DataFrame(
                     index=idx, data=shared._DFS[key]
                 ).drop_duplicates()
             except Exception:
+                logger = utils.get_yf_logger()
+                logger.debug(f"{key}: realigning download data", exc_info=True)
                 shared._DFS[key] = _pd.concat(
                     [utils.empty_df(idx), shared._DFS[key].dropna()], axis=0, sort=True
                 )

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -19,7 +17,6 @@
 # limitations under the License.
 #
 
-from __future__ import print_function
 
 from collections import namedtuple as _namedtuple
 
@@ -32,7 +29,7 @@ from .scrapers.funds import FundsData
 
 class Ticker(TickerBase):
     def __init__(self, ticker, session=None):
-        super(Ticker, self).__init__(ticker, session=session)
+        super().__init__(ticker, session=session)
         self._expirations = {}
         self._underlying  = {}
 
@@ -94,15 +91,9 @@ class Ticker(TickerBase):
             options = self._download_options(date)
 
         if not options:
-            return _namedtuple('Options', ['calls', 'puts', 'underlying'])(**{
-                "calls": None, "puts": None, "underlying": None
-            })
+            return _namedtuple('Options', ['calls', 'puts', 'underlying'])(calls=None, puts=None, underlying=None)
 
-        return _namedtuple('Options', ['calls', 'puts', 'underlying'])(**{
-            "calls": self._options2df(options['calls'], tz=tz),
-            "puts": self._options2df(options['puts'], tz=tz),
-            "underlying": options['underlying']
-        })
+        return _namedtuple('Options', ['calls', 'puts', 'underlying'])(calls=self._options2df(options['calls'], tz=tz), puts=self._options2df(options['puts'], tz=tz), underlying=options['underlying'])
 
     # ------------------------
 

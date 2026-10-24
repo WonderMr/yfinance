@@ -1,40 +1,40 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
 
 class ChartMeta(BaseModel):
-    exchangeTimezoneName: Optional[str] = None
+    exchangeTimezoneName: str | None = None
 
 
 class ChartQuote(BaseModel):
-    open: Optional[List[Optional[float]]] = None
-    close: Optional[List[Optional[float]]] = None
-    high: Optional[List[Optional[float]]] = None
-    low: Optional[List[Optional[float]]] = None
-    volume: Optional[List[Optional[int]]] = None
+    open: list[float | None] | None = None
+    close: list[float | None] | None = None
+    high: list[float | None] | None = None
+    low: list[float | None] | None = None
+    volume: list[int | None] | None = None
 
 
 class ChartAdjClose(BaseModel):
-    adjclose: Optional[List[Optional[float]]] = None
+    adjclose: list[float | None] | None = None
 
 
 class ChartIndicators(BaseModel):
-    quote: Optional[List[ChartQuote]] = None
-    adjclose: Optional[List[ChartAdjClose]] = None
+    quote: list[ChartQuote] | None = None
+    adjclose: list[ChartAdjClose] | None = None
 
 
 class ChartResult(BaseModel):
     meta: ChartMeta
-    timestamp: Optional[List[int]] = None
-    indicators: Optional[ChartIndicators] = None
+    timestamp: list[int] | None = None
+    indicators: ChartIndicators | None = None
 
 
 class Chart(BaseModel):
-    result: List[ChartResult]
-    error: Optional[Dict[str, Any]] = None
+    result: list[ChartResult]
+    error: dict[str, Any] | None = None
 
 
 class ChartResponse(BaseModel):

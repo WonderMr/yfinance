@@ -1,9 +1,10 @@
-from datetime import datetime, timedelta, timezone
 import unittest
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 
-from tests.context import yfinance as yf, session_gbl
+from tests.context import session_gbl
+from tests.context import yfinance as yf
 
 
 class TestCalendars(unittest.TestCase):

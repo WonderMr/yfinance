@@ -8,19 +8,27 @@ Specific test class:
    python -m unittest tests.ticker.TestTicker
 
 """
+import types
+import unittest
 from datetime import datetime, timedelta
+
+# import requests_cache
+from typing import Any, Union, _GenericAlias, get_args, get_origin
 
 import pandas as pd
 
-from tests.context import yfinance as yf
 from tests.context import session_gbl
-from yfinance.exceptions import YFPricesMissingError, YFInvalidPeriodError, YFNotImplementedError, YFTickerMissingError, YFTzMissingError, YFDataException
+from tests.context import yfinance as yf
 from yfinance.config import YfConfig
+from yfinance.exceptions import (
+    YFDataException,
+    YFInvalidPeriodError,
+    YFNotImplementedError,
+    YFPricesMissingError,
+    YFTickerMissingError,
+    YFTzMissingError,
+)
 
-import unittest
-# import requests_cache
-from typing import Union, Any, get_args, get_origin, _GenericAlias
-import types
 # from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 ticker_attributes = (
@@ -35,9 +43,9 @@ ticker_attributes = (
     ("shares", pd.DataFrame),
     ("info", dict),
     ("calendar", dict),
-    ("recommendations", Union[pd.DataFrame, dict]),
-    ("recommendations_summary", Union[pd.DataFrame, dict]),
-    ("upgrades_downgrades", Union[pd.DataFrame, dict]),
+    ("recommendations", pd.DataFrame | dict),
+    ("recommendations_summary", pd.DataFrame | dict),
+    ("upgrades_downgrades", pd.DataFrame | dict),
     ("ttm_cashflow", pd.DataFrame),
     ("quarterly_cashflow", pd.DataFrame),
     ("cashflow", pd.DataFrame),
@@ -73,7 +81,7 @@ def assert_attribute_type(testClass: unittest.TestCase, instance, attribute_name
                 testClass.assertTrue(isinstance(attribute, allowed_types), err_msg)
             else:
                 testClass.assertEqual(type(attribute), expected_type, err_msg)
-    except Exception:
+    except YFNotImplementedError:
         testClass.assertRaises(
             YFNotImplementedError, lambda: getattr(instance, attribute_name)
         )
@@ -1001,12 +1009,9 @@ class TestTickerAnalysts(TickerTestBase):
         ]
 
         for attribute in attributes:
-            try:
-                data = getattr(self.ticker_no_analysts, attribute)
-                self.assertIsInstance(data, pd.DataFrame, "data has wrong type")
-                self.assertTrue(data.empty, "data is not empty")
-            except Exception as e:
-                self.fail(f"Exception raised for attribute '{attribute}': {e}")
+            data = getattr(self.ticker_no_analysts, attribute)
+            self.assertIsInstance(data, pd.DataFrame, "data has wrong type")
+            self.assertTrue(data.empty, "data is not empty")
 
 
 
@@ -1066,14 +1071,14 @@ class TestTickerInfo(TickerTestBase):
                      "INX846K01K35": False,    # Nonexistent and raises an error
                      "INF846K01K35": True
                      }
-        for isin in isin_list:
-            if not isin_list[isin]:
+        for isin, is_valid in isin_list.items():
+            if not is_valid:
                 with self.assertRaises(ValueError) as context:
                     ticker = yf.Ticker(isin)
                 self.assertIn(str(context.exception), [ f"Invalid ISIN number: {isin}", "Empty tickername" ])
             else:
                 ticker = yf.Ticker(isin)
-            ticker.info
+            _ = ticker.info
             
     def test_empty_info(self):
         # Test issue 2343 (Empty result _fetch)
@@ -1200,12 +1205,8 @@ class TestTickerFundsData(TickerTestBase):
         self.ticker = None
 
     def test_fetch_and_parse(self):
-        try:
-            for ticker in self.test_tickers:
-                ticker.funds_data._fetch_and_parse()
-
-        except Exception as e:
-            self.fail(f"_fetch_and_parse raised an exception unexpectedly: {e}")
+        for ticker in self.test_tickers:
+            ticker.funds_data._fetch_and_parse()
 
         with self.assertRaises(YFDataException):
             ticker = yf.Ticker("AAPL", session=self.session) # stock, not funds

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -97,7 +95,7 @@ class Search:
             "recommendedCount": self.recommended
         }
 
-        self._logger.debug(f'{self.query}: Yahoo GET parameters: {str(dict(params))}')
+        self._logger.debug(f'{self.query}: Yahoo GET parameters: {dict(params)!s}')
 
         data = self._data.cache_get(url=url, params=params, timeout=self.timeout)
         if data is None or "Will be right back" in data.text:

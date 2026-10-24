@@ -1,5 +1,6 @@
 import yfinance as yf
 
+
 # define your message callback
 def message_handler(message):
     print("Received message:", message)

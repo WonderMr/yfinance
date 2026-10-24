@@ -1,12 +1,10 @@
-from tests.context import yfinance as yf
-
 import unittest
 from unittest.mock import Mock
 
 from pydantic import ValidationError
 
+from tests.context import yfinance as yf
 from yfinance.chart import ChartResponse
-
 
 SAMPLE_CHART_RESPONSE = {
     "chart": {

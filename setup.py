@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 #
 # yfinance - market data downloader
@@ -6,10 +5,10 @@
 
 """yfinance - market data downloader"""
 
-from setuptools import setup, find_packages
 # from codecs import open
-import io
 from os import path
+
+from setuptools import find_packages, setup
 
 # --- get version ---
 version = "unknown"
@@ -22,7 +21,7 @@ with open("yfinance/version.py") as f:
 here = path.abspath(path.dirname(__file__))
 
 # Get the long description from the README file
-with io.open(path.join(here, 'README.md'), encoding='utf-8') as f:
+with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
@@ -50,21 +49,18 @@ setup(
         'Topic :: Software Development :: Libraries',
         'Topic :: Software Development :: Libraries :: Python Modules',
 
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
     ],
+    python_requires='>=3.10',
     platforms=['any'],
     keywords='pandas, yahoo finance, pandas datareader',
     packages=find_packages(exclude=['contrib', 'docs', 'tests', 'examples']),
-    # curl_cffi 0.14 has major problems, see their Github
+    # curl_cffi <0.15 is affected by CVE-2026-33752.
     install_requires=['pandas>=1.3.0', 'numpy>=1.16.5',
                       'requests>=2.31', 'multitasking>=0.0.7',
                       'platformdirs>=2.0.0', 'pytz>=2022.5',
                       'frozendict>=2.3.4', 'peewee>=3.16.2',
-                      'beautifulsoup4>=4.11.1', 'curl_cffi>=0.7,<0.14',
+                      'beautifulsoup4>=4.11.1', 'curl_cffi>=0.15,<0.16',
                       'protobuf>=3.19.0', 'pydantic>=2', 'websockets>=13.0'],
     extras_require={
         'nospam': ['requests_cache>=1.0', 'requests_ratelimiter>=0.3.1'],

@@ -2,7 +2,8 @@ import unittest
 
 import pandas as pd
 
-from tests.context import yfinance as yf, session_gbl
+from tests.context import session_gbl
+from tests.context import yfinance as yf
 
 
 class TestLookup(unittest.TestCase):

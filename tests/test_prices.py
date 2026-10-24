@@ -1,13 +1,12 @@
-from tests.context import yfinance as yf
-from tests.context import session_gbl
-
-import unittest
-import socket
-
 import datetime as _dt
-import pytz as _tz
+import unittest
+
 import numpy as _np
 import pandas as _pd
+import pytz as _tz
+
+from tests.context import session_gbl
+from tests.context import yfinance as yf
 
 
 class TestPriceHistory(unittest.TestCase):
@@ -126,7 +125,7 @@ class TestPriceHistory(unittest.TestCase):
             try:
                 self.assertNotEqual(dt0.week, dt1.week)
             except AssertionError:
-                print("Ticker={}: Last two rows within same week:".format(tkr))
+                print(f"Ticker={tkr}: Last two rows within same week:")
                 print(df.iloc[df.shape[0] - 2:])
                 raise
 
@@ -154,7 +153,7 @@ class TestPriceHistory(unittest.TestCase):
         interval = '30m'
         df_index = []
         d = 13
-        for h in range(0, 16):
+        for h in range(16):
             for m in [0, 30]:
                 df_index.append(_dt.datetime(2023, 9, d, h, m))
         df_index.append(_dt.datetime(2023, 9, d, 16))
@@ -260,8 +259,8 @@ class TestPriceHistory(unittest.TestCase):
         except AssertionError:
             missing_from_df1 = df2.index.difference(df1.index)
             missing_from_df2 = df1.index.difference(df2.index)
-            print("{} missing these dates: {}".format(tkr1, missing_from_df1))
-            print("{} missing these dates: {}".format(tkr2, missing_from_df2))
+            print(f"{tkr1} missing these dates: {missing_from_df1}")
+            print(f"{tkr2} missing these dates: {missing_from_df2}")
             raise
 
         # Test that index same with and without events:
@@ -275,8 +274,8 @@ class TestPriceHistory(unittest.TestCase):
             except AssertionError:
                 missing_from_df1 = df2.index.difference(df1.index)
                 missing_from_df2 = df1.index.difference(df2.index)
-                print("{}-with-events missing these dates: {}".format(tkr, missing_from_df1))
-                print("{}-without-events missing these dates: {}".format(tkr, missing_from_df2))
+                print(f"{tkr}-with-events missing these dates: {missing_from_df1}")
+                print(f"{tkr}-without-events missing these dates: {missing_from_df2}")
                 raise
 
         # Reproduce issue #1634 - 1d dividend out-of-range, should be prepended to prices
@@ -303,8 +302,8 @@ class TestPriceHistory(unittest.TestCase):
         except AssertionError:
             missing_from_df1 = df2.index.difference(df1.index)
             missing_from_df2 = df1.index.difference(df2.index)
-            print("{} missing these dates: {}".format(tkr1, missing_from_df1))
-            print("{} missing these dates: {}".format(tkr2, missing_from_df2))
+            print(f"{tkr1} missing these dates: {missing_from_df1}")
+            print(f"{tkr2} missing these dates: {missing_from_df2}")
             raise
 
         # Test that index same with and without events:
@@ -318,8 +317,8 @@ class TestPriceHistory(unittest.TestCase):
             except AssertionError:
                 missing_from_df1 = df2.index.difference(df1.index)
                 missing_from_df2 = df1.index.difference(df2.index)
-                print("{}-with-events missing these dates: {}".format(tkr, missing_from_df1))
-                print("{}-without-events missing these dates: {}".format(tkr, missing_from_df2))
+                print(f"{tkr}-with-events missing these dates: {missing_from_df1}")
+                print(f"{tkr}-without-events missing these dates: {missing_from_df2}")
                 raise
 
     def test_monthlyWithEvents(self):
@@ -336,8 +335,8 @@ class TestPriceHistory(unittest.TestCase):
         except AssertionError:
             missing_from_df1 = df2.index.difference(df1.index)
             missing_from_df2 = df1.index.difference(df2.index)
-            print("{} missing these dates: {}".format(tkr1, missing_from_df1))
-            print("{} missing these dates: {}".format(tkr2, missing_from_df2))
+            print(f"{tkr1} missing these dates: {missing_from_df1}")
+            print(f"{tkr2} missing these dates: {missing_from_df2}")
             raise
 
         # Test that index same with and without events:
@@ -351,8 +350,8 @@ class TestPriceHistory(unittest.TestCase):
             except AssertionError:
                 missing_from_df1 = df2.index.difference(df1.index)
                 missing_from_df2 = df1.index.difference(df2.index)
-                print("{}-with-events missing these dates: {}".format(tkr, missing_from_df1))
-                print("{}-without-events missing these dates: {}".format(tkr, missing_from_df2))
+                print(f"{tkr}-with-events missing these dates: {missing_from_df1}")
+                print(f"{tkr}-without-events missing these dates: {missing_from_df2}")
                 raise
 
     def test_monthlyWithEvents2(self):
@@ -369,7 +368,7 @@ class TestPriceHistory(unittest.TestCase):
         try:
             yf.Ticker("ESLT.TA", session=self.session).history(start="2002-10-06", end="2002-10-09", interval="1d")
         except _tz.exceptions.AmbiguousTimeError:
-            raise Exception("Ambiguous DST issue not resolved")
+            self.fail("Ambiguous DST issue not resolved")
 
     def test_dst_fix(self):
         # Daily intervals should start at time 00:00. But for some combinations of date and timezone,
@@ -465,7 +464,7 @@ class TestPriceHistory(unittest.TestCase):
         from yfinance.exceptions import YFPricesMissingError
 
         # Transient errors (should retry)
-        self.assertTrue(_is_transient_error(socket.error("Network error")))
+        self.assertTrue(_is_transient_error(OSError("Network error")))
         self.assertTrue(_is_transient_error(TimeoutError("Timeout")))
         self.assertTrue(_is_transient_error(OSError("OS error")))
 

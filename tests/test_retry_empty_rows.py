@@ -1,7 +1,6 @@
-import pandas as pd
-import yfinance as yf
 from yfinance.data import YfData
 from yfinance.scrapers.history import PriceHistory
+
 
 class MockResponse:
     def __init__(self, json_data):

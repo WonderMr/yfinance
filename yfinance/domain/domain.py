@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
+
 import pandas as _pd
-from typing import Dict, List, Optional
 
 from ..const import _QUERY1_URL_
 from ..data import YfData
@@ -26,11 +26,11 @@ class Domain(ABC):
         self.session = session
         self._data: YfData = YfData(session=session)
 
-        self._name: Optional[str] = None
-        self._symbol: Optional[str] = None
-        self._overview: Optional[Dict] = None
-        self._top_companies: Optional[_pd.DataFrame] = None
-        self._research_reports: Optional[List[Dict[str, str]]] = None
+        self._name: str | None = None
+        self._symbol: str | None = None
+        self._overview: dict | None = None
+        self._top_companies: _pd.DataFrame | None = None
+        self._research_reports: list[dict[str, str]] | None = None
 
     @property
     def key(self) -> str:
@@ -76,7 +76,7 @@ class Domain(ABC):
         return Ticker(self._symbol)
 
     @property
-    def overview(self) -> Dict:
+    def overview(self) -> dict:
         """
         Retrieves the overview information of the domain entity.
 
@@ -87,7 +87,7 @@ class Domain(ABC):
         return self._overview
 
     @property
-    def top_companies(self) -> Optional[_pd.DataFrame]:
+    def top_companies(self) -> _pd.DataFrame | None:
         """
         Retrieves the top companies within the domain entity.
 
@@ -98,7 +98,7 @@ class Domain(ABC):
         return self._top_companies 
 
     @property
-    def research_reports(self) -> List[Dict[str, str]]:
+    def research_reports(self) -> list[dict[str, str]]:
         """
         Retrieves research reports related to the domain entity.
 
@@ -108,7 +108,7 @@ class Domain(ABC):
         self._ensure_fetched(self._research_reports)
         return self._research_reports
 
-    def _fetch(self, query_url) -> Dict:
+    def _fetch(self, query_url) -> dict:
         """
         Fetches data from the given query URL.
 
@@ -135,7 +135,7 @@ class Domain(ABC):
         self._top_companies = self._parse_top_companies(data.get('topCompanies', {}))
         self._research_reports = data.get('researchReports')
 
-    def _parse_overview(self, overview) -> Dict:
+    def _parse_overview(self, overview) -> dict:
         """
         Parses the overview data for the domain entity.
 
@@ -155,7 +155,7 @@ class Domain(ABC):
             "employee_count": overview.get('employeeCount', {}).get('raw', None)
         }
 
-    def _parse_top_companies(self, top_companies) -> Optional[_pd.DataFrame]:
+    def _parse_top_companies(self, top_companies) -> _pd.DataFrame | None:
         """
         Parses the top companies data and converts it into a pandas DataFrame.
 

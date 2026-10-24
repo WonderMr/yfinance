@@ -58,3 +58,21 @@ Tests have been written using the built-in Python module `unittest`. Examples:
 https://ranaroussi.github.io/yfinance/development/testing.html
 
 > See the [Developer Guide](https://ranaroussi.github.io/yfinance/development/contributing.html#GIT-STUFF) for more information.
+
+
+## Static checks
+
+CI uses Ruff 0.17.2 and Pyright 1.1.414. Install those versions into an isolated
+Python environment, then run the same commands as the workflows:
+
+```bash
+pip install ruff==0.17.2 pyright==1.1.414
+ruff check --ignore E702 . --exclude yfinance/pricing_pb2.py
+pyright . --level error
+```
+
+`ruff.toml` sets the Python target to 3.10 to match the package minimum. Ruff's
+default lint rules remain enabled. Property access in examples assigns the
+result so lazy fetches still run. Compatibility exceptions retain the established
+`ValueError` behavior, and the process-lifetime `YfData` singleton retains its
+bounded method cache and its `cache_clear` / `cache_info` interface.

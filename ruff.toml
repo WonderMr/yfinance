@@ -1,0 +1,2 @@
+# Keep lint suggestions compatible with the declared package minimum.
+target-version = "py310"

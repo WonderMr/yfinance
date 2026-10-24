@@ -1,15 +1,15 @@
-import curl_cffi
-from typing import Union
 import warnings
 from json import dumps
 
+import curl_cffi
+
 from yfinance.const import _QUERY1_URL_
 from yfinance.data import YfData
-from ..utils import dynamic_docstring, generate_list_table_from_dict_universal
 
+from ..utils import dynamic_docstring, generate_list_table_from_dict_universal
+from .query import EquityQuery, FundQuery, QueryBase
 from .query import EquityQuery as EqyQy
 from .query import FundQuery as FndQy
-from .query import QueryBase, EquityQuery, FundQuery
 
 _SCREENER_URL_ = f"{_QUERY1_URL_}/v1/finance/screener"
 _PREDEFINED_URL_ = f"{_SCREENER_URL_}/predefined/saved"
@@ -52,14 +52,14 @@ PREDEFINED_SCREENER_QUERIES = {
 }
 
 @dynamic_docstring({"predefined_screeners": generate_list_table_from_dict_universal(PREDEFINED_SCREENER_QUERIES, bullets=True, title='Predefined queries (Dec-2024)')})
-def screen(query: Union[str, EquityQuery, FundQuery],
-            offset: int = None, 
-            size: int = None,
-            count: int = None,
-            sortField: str = None, 
-            sortAsc: bool = None,
-            userId: str = None, 
-            userIdType: str = None, 
+def screen(query: str | EquityQuery | FundQuery,
+            offset: int | None = None,
+            size: int | None = None,
+            count: int | None = None,
+            sortField: str | None = None,
+            sortAsc: bool | None = None,
+            userId: str | None = None,
+            userIdType: str | None = None,
             session = None):
     """
     Run a screen: predefined query, or custom query.
@@ -185,7 +185,7 @@ def screen(query: Union[str, EquityQuery, FundQuery],
         post_query['query'] = query
 
     else:
-        raise ValueError(f'Query must be type str or QueryBase, not "{type(query)}"')
+        raise ValueError(f'Query must be type str or QueryBase, not "{type(query)}"')  # noqa: TRY004 - Preserve the established ValueError API.
 
     if query is None:
         raise ValueError('No query provided')

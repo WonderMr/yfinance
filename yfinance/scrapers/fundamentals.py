@@ -4,10 +4,11 @@ import warnings
 
 import pandas as pd
 
-from yfinance import utils, const
+from yfinance import const, utils
 from yfinance.config import YfConfig
 from yfinance.data import YfData
 from yfinance.exceptions import YFException, YFNotImplementedError
+
 
 class Fundamentals:
 
@@ -106,7 +107,6 @@ class Financials:
         except Exception:
             if not YfConfig.debug.hide_exceptions:
                 raise
-            pass
 
     def _get_financials_time_series(self, timescale, keys: list) -> pd.DataFrame:
         timescale_translation = {"yearly": "annual", "quarterly": "quarterly", "trailing": "trailing"}
@@ -133,12 +133,12 @@ class Financials:
         timestamps = set()
         data_unpacked = {}
         for x in data_raw:
-            for k in x.keys():
+            for k in x:
                 if k == "timestamp":
                     timestamps.update(x[k])
                 else:
                     data_unpacked[k] = x[k]
-        timestamps = sorted(list(timestamps))
+        timestamps = sorted(timestamps)
         dates = pd.to_datetime(timestamps, unit="s")
         df = pd.DataFrame(columns=dates, index=list(data_unpacked.keys()))
         for k, v in data_unpacked.items():

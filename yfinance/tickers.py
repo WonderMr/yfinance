@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # yfinance - market data downloader
 # https://github.com/ranaroussi/yfinance
@@ -19,11 +17,11 @@
 # limitations under the License.
 #
 
-from __future__ import print_function
 
-from . import Ticker, multi
-from .live import WebSocket
+from . import multi
 from .data import YfData
+from .live import WebSocket
+from .ticker import Ticker
 
 
 class Tickers:

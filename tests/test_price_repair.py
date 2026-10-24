@@ -1,12 +1,12 @@
-from tests.context import yfinance as yf
-from tests.context import session_gbl
-
+import datetime as _dt
+import os
 import unittest
 
-import os
-import datetime as _dt
 import numpy as _np
 import pandas as _pd
+
+from tests.context import session_gbl
+from tests.context import yfinance as yf
 
 
 class TestPriceRepairAssumptions(unittest.TestCase):
@@ -212,7 +212,6 @@ class TestPriceRepair(unittest.TestCase):
         # Simulate data missing split-adjustment:
         df[data_cols] *= 100.0
         df["Volume"] *= 0.01
-        #
         df.index.name = "Date"
         # Create 100x errors:
         df_bad = df.copy()
